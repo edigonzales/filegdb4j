@@ -81,13 +81,24 @@ public final class FileGdbCli {
       for (Dataset dataset : datasets) {
         try (FileGdbTable table = gdb.table(dataset.name())) {
           GeometryKind kind = table.geomField() == null ? null : table.geomField().geometry().kind();
+          String geometryText = "-";
+          if (kind != null) {
+            StringBuilder text = new StringBuilder(kind.name());
+            if (table.geomField().geometry().hasZ()) {
+              text.append(" Z");
+            }
+            if (table.geomField().geometry().hasM()) {
+              text.append(" M");
+            }
+            geometryText = text.toString();
+          }
           CrsDefinition crs = dataset.crs();
           String crsText = crs.isDefined() ? Integer.toString(crs.effectiveWkid()) : "-";
           System.out.printf(
               "%-32s %-14s %-12s %8d %-8s %6d%n",
               dataset.name(),
               dataset.isFeatureClass() ? "feature class" : "table",
-              kind == null ? "-" : kind.name(),
+              geometryText,
               table.rowCount(),
               crsText.isBlank() || crsText.equals("0") ? "-" : crsText,
               table.fields().size());
@@ -171,7 +182,15 @@ public final class FileGdbCli {
       System.out.println();
 
       JtsGeometryReader jts = new JtsGeometryReader(table.crs().effectiveWkid());
-      WKTWriter wkt = new WKTWriter();
+      int outputDimension = 2;
+      if (table.geomField() != null) {
+        if (table.geomField().geometry().hasM()) {
+          outputDimension = 4;
+        } else if (table.geomField().geometry().hasZ()) {
+          outputDimension = 3;
+        }
+      }
+      WKTWriter wkt = new WKTWriter(outputDimension);
       long count = 0;
       for (FileGdbRow row : table) {
         if (count >= limit) {

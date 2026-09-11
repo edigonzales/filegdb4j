@@ -33,7 +33,8 @@ Vector Reader/Writer; afterwards it can serve as the backend of `ili2ofgdb`.
 
 The Java reader is verified against `ogrinfo` from GDAL 3.13.3: all layer
 feature counts and the layer geometry classification of the reference
-geodatabase match.
+geodatabase match. Additional fixtures cover UTF-16 strings, sparse rows with
+large object ids and 3D tables in the version 4 (ArcGIS Pro) format.
 
 ## Modules
 
@@ -123,4 +124,8 @@ cd gdal-3.13.3-ref && git sparse-checkout set ogr/ogrsf_frmts/openfilegdb
   data from the GDAL repository
   (`autotest/ogr/data/filegdb/`, MIT licensed) and cover coded value domains,
   range domains and relationship classes for all cardinalities.
+- `test-data/gdal/test_utf16.gdb`, `testdatetimeutc.gdb` and
+  `objectid64/3features.gdb` (also GDAL test data) cover UTF-16 string
+  decoding, sparse rows with large object ids and 3D polygons in the version 4
+  table format.
 - `test-data/gdal/curves.gdb` is reserved for the curved segment support.
