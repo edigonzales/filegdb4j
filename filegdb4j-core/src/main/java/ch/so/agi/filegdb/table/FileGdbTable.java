@@ -75,6 +75,16 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
     return tableFile.geomField() != null;
   }
 
+  /** Index of the geometry field in {@link #fields()}, or -1 for plain tables. */
+  public int geomFieldIndex() {
+    return tableFile.geomFieldIndex();
+  }
+
+  /** Index of the object id field in {@link #fields()}, or -1 if absent. */
+  public int objectIdFieldIndex() {
+    return tableFile.objectIdFieldIndex();
+  }
+
   public CrsDefinition crs() {
     return dataset.crs();
   }

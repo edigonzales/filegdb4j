@@ -236,13 +236,6 @@ public final class GeometryCodec {
     }
     pointsPerPart[(int) partCount - 1] = (int) (pointCount - sum);
 
-    if (curveCount > 0) {
-      throw new IllegalArgumentException(
-          "Curved file geodatabase segments are not supported yet (curve count "
-              + curveCount
-              + ")");
-    }
-
     List<FileGdbPart> parts = new ArrayList<>(pointsPerPart.length);
     Delta dx = new Delta();
     Delta dy = new Delta();
@@ -292,7 +285,123 @@ public final class GeometryCodec {
         parts.set(partIndex, new FileGdbPart(points));
       }
     }
+    if (curveCount > 0) {
+      parts = attachCurves(parts, cursor, curveCount);
+    }
     return parts;
+  }
+
+  private static List<FileGdbPart> attachCurves(
+      List<FileGdbPart> parts, Cursor cursor, long curveCount) {
+    int[] starts = new int[parts.size()];
+    int offset = 0;
+    for (int i = 0; i < parts.size(); i++) {
+      starts[i] = offset;
+      offset += parts.get(i).points().size();
+    }
+    List<List<FileGdbSegment>> perPart = new ArrayList<>(parts.size());
+    for (int i = 0; i < parts.size(); i++) {
+      perPart.add(new ArrayList<>());
+    }
+    for (long curve = 0; curve < curveCount; curve++) {
+      int startIndex = (int) cursor.varUInt32();
+      int curveType = cursor.u8();
+      FileGdbSegment segment;
+      switch (curveType) {
+        case 1 -> {
+          double value1 = cursor.f64();
+          double value2 = cursor.f64();
+          long bits = cursor.u32();
+          boolean interiorPoint = (bits & 0x80) != 0 && (bits & 0x20) == 0;
+          boolean centerPoint =
+              (bits & 0x1) == 0 && (bits & 0x20) == 0 && (bits & 0x40) == 0;
+          if (interiorPoint) {
+            segment = new CircularArcSegment(startIndex, value1, value2, false, false);
+          } else if (centerPoint) {
+            segment =
+                new CircularArcSegment(startIndex, value1, value2, true, (bits & 0x8) != 0);
+          } else {
+            segment = null;
+          }
+        }
+        case 4 ->
+            segment =
+                new BezierSegment(
+                    startIndex, cursor.f64(), cursor.f64(), cursor.f64(), cursor.f64());
+        case 5 -> {
+          double centerX = cursor.f64();
+          double centerY = cursor.f64();
+          double rotation = cursor.f64();
+          double semiMajor = cursor.f64();
+          double ratio = cursor.f64();
+          long bits = cursor.u32();
+          if ((bits & 0x200) == 0 && (bits & 0x400) == 0) {
+            segment =
+                new EllipseSegment(
+                    startIndex,
+                    centerX,
+                    centerY,
+                    Math.toDegrees(rotation),
+                    semiMajor,
+                    ratio,
+                    (bits & 0x1000) != 0,
+                    (bits & 0x2000) != 0);
+          } else {
+            segment = null;
+          }
+        }
+        default -> throw new IllegalArgumentException("Unsupported curve type: " + curveType);
+      }
+      if (segment == null) {
+        continue;
+      }
+      int partIndex = partForIndex(starts, startIndex);
+      if (partIndex >= 0 && startIndex - starts[partIndex] < parts.get(partIndex).points().size() - 1) {
+        perPart.get(partIndex).add(shift(segment, starts[partIndex]));
+      }
+    }
+    List<FileGdbPart> result = new ArrayList<>(parts.size());
+    for (int i = 0; i < parts.size(); i++) {
+      FileGdbPart part = parts.get(i);
+      List<FileGdbSegment> segments = perPart.get(i);
+      result.add(segments.isEmpty() ? part : new FileGdbPart(part.points(), segments));
+    }
+    return result;
+  }
+
+  private static int partForIndex(int[] starts, int index) {
+    for (int i = starts.length - 1; i >= 0; i--) {
+      if (index >= starts[i]) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private static FileGdbSegment shift(FileGdbSegment segment, int offset) {
+    int index = segment.startPointIndex() - offset;
+    return switch (segment) {
+      case CircularArcSegment arc ->
+          new CircularArcSegment(
+              index, arc.interiorX(), arc.interiorY(), arc.byCenter(), arc.counterClockwise());
+      case BezierSegment bezier ->
+          new BezierSegment(
+              index,
+              bezier.controlX1(),
+              bezier.controlY1(),
+              bezier.controlX2(),
+              bezier.controlY2());
+      case EllipseSegment ellipse ->
+          new EllipseSegment(
+              index,
+              ellipse.centerX(),
+              ellipse.centerY(),
+              ellipse.rotationDegrees(),
+              ellipse.semiMajor(),
+              ellipse.minorMajorRatio(),
+              ellipse.minor(),
+              ellipse.complete());
+    };
   }
 
   private static FileGdbPoint readDeltaPoint(
@@ -345,6 +454,31 @@ public final class GeometryCodec {
         throw new IllegalArgumentException("Unexpected end of geometry buffer");
       }
       return data[position++] & 0xFF;
+    }
+
+    long u32() {
+      if (position + 4 > limit) {
+        throw new IllegalArgumentException("Unexpected end of geometry buffer");
+      }
+      long value =
+          (data[position] & 0xFFL)
+              | ((data[position + 1] & 0xFFL) << 8)
+              | ((data[position + 2] & 0xFFL) << 16)
+              | ((data[position + 3] & 0xFFL) << 24);
+      position += 4;
+      return value;
+    }
+
+    double f64() {
+      if (position + 8 > limit) {
+        throw new IllegalArgumentException("Unexpected end of geometry buffer");
+      }
+      long value = 0;
+      for (int i = 0; i < 8; i++) {
+        value |= (data[position + i] & 0xFFL) << (8 * i);
+      }
+      position += 8;
+      return Double.longBitsToDouble(value);
     }
 
     long varUInt32() {
@@ -462,6 +596,12 @@ public final class GeometryCodec {
     boolean polyline = geometry instanceof FileGdbPolyline;
     List<FileGdbPart> parts =
         polyline ? ((FileGdbPolyline) geometry).parts() : ((FileGdbPolygon) geometry).parts();
+    for (FileGdbPart part : parts) {
+      if (!part.segments().isEmpty()) {
+        throw new UnsupportedOperationException(
+            "Writing curved file geodatabase segments is not supported yet");
+      }
+    }
     int type;
     if (polyline) {
       type = hasZ ? (hasM ? SHPT_ARCZM : SHPT_ARCZ) : (hasM ? SHPT_ARCM : SHPT_ARC);

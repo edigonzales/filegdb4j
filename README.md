@@ -10,8 +10,8 @@ driver (MIT licensed). Reference version for the port is **GDAL 3.13.3**
 The library is developed standalone and free of Apache Hop and ili2db
 dependencies. First consumer is the
 [hop-vector-raster-plugin](https://github.com/edigonzales/hop-vector-raster-plugin)
-Vector Reader/Writer; afterwards it can serve as the backend of `ili2ofgdb`.
-
+Vector Reader/Writer, where the format is available as `FILEGEODATABASE`;
+afterwards the library can serve as the backend of `ili2ofgdb`.
 - Group id: `ch.so.agi`
 - Packages: `ch.so.agi.filegdb`, `ch.so.agi.filegdb.geometry`,
   `ch.so.agi.filegdb.jts`, `ch.so.agi.filegdb.cli`
@@ -24,12 +24,14 @@ Vector Reader/Writer; afterwards it can serve as the backend of `ili2ofgdb`.
 | Catalog (`a00000001`, `GDB_Items`), dataset/CRS metadata | done |
 | Tables: fields and rows (INT16/32/64, FLOAT32/64, STRING, XML, BINARY, GUID/GLOBALID, DATETIME, DATE, TIME, DATETIME_WITH_OFFSET, OBJECTID) | done |
 | Geometry read: Point, MultiPoint, Polyline, Polygon (XY, Z, M), ring organisation | done |
+| Geometry read: circular arcs (interior point and center), cubic Bezier, ellipse parameters | done (stroked for JTS) |
+| Writer: curved segments | planned |
 | Domains (coded value, range) and field domain assignment | read |
 | Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | read |
 | Writer: new dataset, feature class, rows (attributes, Point/MultiPoint/Polyline/Polygon, XY/Z/M) | done |
 | Writer: domains (coded/range) and relationship classes (1:1, 1:n, n:m with mapping table) | done |
 | Writer: spatial index (`.spx`), attribute indexes, updates/deletes, plain tables API | planned |
-| Curved segments (arc, Bezier, ellipse) | planned |
+| Curved segments (arc, Bezier, ellipse) | read; writing planned |
 | MultiPatch | not supported |
 
 The Java reader is verified against `ogrinfo` from GDAL 3.13.3: all layer

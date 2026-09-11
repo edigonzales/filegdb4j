@@ -1,5 +1,6 @@
 package ch.so.agi.filegdb.jts;
 
+import ch.so.agi.filegdb.geometry.CurveStroker;
 import ch.so.agi.filegdb.geometry.FileGdbGeometry;
 import ch.so.agi.filegdb.geometry.FileGdbMultiPoint;
 import ch.so.agi.filegdb.geometry.FileGdbPart;
@@ -32,6 +33,7 @@ import org.locationtech.jts.geom.PrecisionModel;
 public final class JtsGeometryReader {
 
   private final GeometryFactory factory;
+  private final CurveStroker curveStroker = new CurveStroker();
 
   public JtsGeometryReader(int srid) {
     this.factory = new GeometryFactory(new PrecisionModel(), srid);
@@ -85,7 +87,7 @@ public final class JtsGeometryReader {
     List<LinearRing> exteriors = new ArrayList<>();
     List<LinearRing> holes = new ArrayList<>();
     for (FileGdbPart part : polygon.parts()) {
-      Coordinate[] coordinates = coordinates(part);
+      Coordinate[] coordinates = coordinates(part, true);
       if (coordinates.length < 4) {
         continue;
       }
@@ -145,7 +147,11 @@ public final class JtsGeometryReader {
   }
 
   private Coordinate[] coordinates(FileGdbPart part) {
-    List<FileGdbPoint> points = part.points();
+    return coordinates(part, false);
+  }
+
+  private Coordinate[] coordinates(FileGdbPart part, boolean close) {
+    List<FileGdbPoint> points = part.segments().isEmpty() ? part.points() : curveStroker.stroke(part);
     if (points.isEmpty()) {
       return new Coordinate[0];
     }
@@ -154,7 +160,7 @@ public final class JtsGeometryReader {
       coordinates[i] = coordinate(points.get(i));
     }
     // File geodatabase rings are closed, but be tolerant.
-    if (!coordinates[0].equals2D(coordinates[coordinates.length - 1])) {
+    if (close && !coordinates[0].equals2D(coordinates[coordinates.length - 1])) {
       Coordinate[] closed = new Coordinate[coordinates.length + 1];
       System.arraycopy(coordinates, 0, closed, 0, coordinates.length);
       closed[coordinates.length] = new Coordinate(coordinates[0]);
