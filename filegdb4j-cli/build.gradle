@@ -1,0 +1,13 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':filegdb4j-core')
+    implementation project(':filegdb4j-jts')
+}
+
+application {
+    applicationName = 'filegdb4j'
+    mainClass = 'ch.so.agi.filegdb.cli.FileGdbCli'
+}

@@ -1,0 +1,4 @@
+dependencies {
+    api project(':filegdb4j-geometry')
+    testImplementation project(':filegdb4j-test-support')
+}
