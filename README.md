@@ -24,17 +24,22 @@ Vector Reader/Writer; afterwards it can serve as the backend of `ili2ofgdb`.
 | Catalog (`a00000001`, `GDB_Items`), dataset/CRS metadata | done |
 | Tables: fields and rows (INT16/32/64, FLOAT32/64, STRING, XML, BINARY, GUID/GLOBALID, DATETIME, DATE, TIME, DATETIME_WITH_OFFSET, OBJECTID) | done |
 | Geometry read: Point, MultiPoint, Polyline, Polygon (XY, Z, M), ring organisation | done |
-| Domains (coded value, range) and field domain assignment | done |
-| Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | done |
+| Domains (coded value, range) and field domain assignment | read |
+| Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | read |
+| Writer: new dataset, feature class, rows (attributes, Point/MultiPoint/Polyline/Polygon, XY/Z/M) | done |
+| Writer: domains and relationship classes in the catalog | planned |
+| Writer: spatial index (`.spx`), attribute indexes, updates/deletes | planned |
 | Curved segments (arc, Bezier, ellipse) | planned |
 | MultiPatch | not supported |
-| Writer (new dataset, feature class, rows, catalogue) | planned |
-| Spatial index (`.spx`), free list, deletes/updates | planned |
 
 The Java reader is verified against `ogrinfo` from GDAL 3.13.3: all layer
 feature counts and the layer geometry classification of the reference
 geodatabase match. Additional fixtures cover UTF-16 strings, sparse rows with
 large object ids and 3D tables in the version 4 (ArcGIS Pro) format.
+
+Created databases are verified with `ogrinfo` and `ogr2ogr` from the same GDAL
+version: layers, field types, null values, dates, GUIDs, CRS and geometries are
+recognised.
 
 ## Modules
 
@@ -73,6 +78,24 @@ try (FileGeodatabase gdb = FileGeodatabase.open(Path.of("npl_2546.gdb"))) {
     for (FileGdbRow row : table) {
       System.out.println(row.get("T_Id") + ": " + row.geometry());
     }
+  }
+}
+```
+
+Writing:
+
+```java
+try (FileGeodatabase gdb = FileGeodatabase.create(Path.of("new.gdb"))) {
+  FeatureClassDefinition definition =
+      FeatureClassDefinition.builder("roads")
+          .field(FileGdbField.string("name", 255).asRequired())
+          .field(FileGdbField.real("length").asNullable())
+          .geometry(GeometryFieldDefinition.of("shape", GeometryKind.POLYGON))
+          .crs(new CrsDefinition(2056, 2056, ""))
+          .build();
+  try (GdbFeatureWriter writer = gdb.createFeatureClass(definition)) {
+    writer.write(new Object[] {"A1", 12.5}, polygon);
+    writer.write(new Object[] {"B2", null}, null);
   }
 }
 ```

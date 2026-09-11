@@ -1,0 +1,219 @@
+package ch.so.agi.filegdb.write;
+
+import ch.so.agi.filegdb.catalog.CrsDefinition;
+import ch.so.agi.filegdb.geometry.GeometryFieldDefinition;
+import ch.so.agi.filegdb.geometry.GeometryKind;
+import ch.so.agi.filegdb.table.FileGdbField;
+import ch.so.agi.filegdb.table.FileGdbFieldType;
+import java.util.Locale;
+
+/**
+ * Builds the catalog XML definitions written to {@code GDB_Items}.
+ *
+ * <p>The layout mirrors the definitions GDAL writes, see
+ * {@code ogropenfilegdblayer_write.cpp} ({@code RefreshXMLDefinitionInMemory},
+ * {@code CreateXMLFieldDefinition}, {@code XMLSerializeGeomFieldBase}).
+ */
+final class DefinitionXmlWriter {
+
+  private DefinitionXmlWriter() {}
+
+  static String featureClass(FeatureClassDefinition definition, int dsid) {
+    GeometryFieldDefinition geometry = definition.geometry();
+    StringBuilder xml = new StringBuilder(2048);
+    xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.append("<DEFeatureClassInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+    xml.append(" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"");
+    xml.append(" xmlns:typens=\"http://www.esri.com/schemas/ArcGIS/10.3\"");
+    xml.append(" xsi:type=\"typens:DEFeatureClassInfo\">\n");
+    element(xml, 1, "CatalogPath", "\\" + definition.name());
+    element(xml, 1, "Name", definition.name());
+    element(xml, 1, "ChildrenExpanded", "false");
+    element(xml, 1, "DatasetType", "esriDTFeatureClass");
+    element(xml, 1, "DSID", Integer.toString(dsid));
+    element(xml, 1, "Versioned", "false");
+    element(xml, 1, "CanVersion", "false");
+    element(xml, 1, "HasOID", "true");
+    element(xml, 1, "OIDFieldName", "OBJECTID");
+
+    xml.append("  <GPFieldInfoExs xsi:type=\"typens:ArrayOfGPFieldInfoEx\">\n");
+    xml.append("    <GPFieldInfoEx xsi:type=\"typens:GPFieldInfoEx\">\n");
+    element(xml, 3, "Name", "OBJECTID");
+    element(xml, 3, "FieldType", "esriFieldTypeOID");
+    element(xml, 3, "IsNullable", "false");
+    element(xml, 3, "Length", "4");
+    element(xml, 3, "Precision", "0");
+    element(xml, 3, "Scale", "0");
+    element(xml, 3, "Required", "true");
+    xml.append("    </GPFieldInfoEx>\n");
+    for (FileGdbField field : definition.fields()) {
+      writeField(xml, field);
+    }
+    writeGeometryField(xml, geometry);
+    xml.append("  </GPFieldInfoExs>\n");
+
+    element(xml, 1, "CLSID", "{52353152-891A-11D0-BEC6-00805F7C4268}");
+    element(xml, 1, "EXTCLSID", "");
+    if (definition.alias() != null && !definition.alias().isBlank()) {
+      element(xml, 1, "AliasName", definition.alias());
+    }
+    element(xml, 1, "IsTimeInUTC", "false");
+    element(xml, 1, "FeatureType", "esriFTSimple");
+    element(xml, 1, "ShapeType", shapeType(geometry.kind()));
+    element(xml, 1, "ShapeFieldName", geometry.name());
+    element(xml, 1, "HasM", geometry.hasM() ? "true" : "false");
+    element(xml, 1, "HasZ", geometry.hasZ() ? "true" : "false");
+    element(xml, 1, "HasSpatialIndex", "false");
+    element(xml, 1, "AreaFieldName", "");
+    element(xml, 1, "LengthFieldName", "");
+    xml.append("  <Extent xsi:nil=\"true\"/>\n");
+    writeSpatialReference(xml, geometry, definition.crs());
+    xml.append("</DEFeatureClassInfo>");
+    return xml.toString();
+  }
+
+  private static void writeField(StringBuilder xml, FileGdbField field) {
+    xml.append("    <GPFieldInfoEx xsi:type=\"typens:GPFieldInfoEx\">\n");
+    element(xml, 3, "Name", field.name());
+    if (field.alias() != null && !field.alias().isBlank()) {
+      element(xml, 3, "AliasName", field.alias());
+    }
+    element(xml, 3, "FieldType", esriType(field.type()));
+    if (field.nullable()) {
+      element(xml, 3, "IsNullable", "true");
+    }
+    if (field.required()) {
+      element(xml, 3, "Required", "true");
+    }
+    if (!field.editable()) {
+      element(xml, 3, "Editable", "false");
+    }
+    if (field.highPrecision()) {
+      element(xml, 3, "HighPrecision", "true");
+    }
+    element(xml, 3, "Length", Integer.toString(fieldLength(field)));
+    element(xml, 3, "Precision", "0");
+    element(xml, 3, "Scale", "0");
+    if (field.domain() != null && !field.domain().isBlank()) {
+      element(xml, 3, "DomainName", field.domain());
+    }
+    xml.append("    </GPFieldInfoEx>\n");
+  }
+
+  private static void writeGeometryField(StringBuilder xml, GeometryFieldDefinition geometry) {
+    xml.append("    <GPFieldInfoEx xsi:type=\"typens:GPFieldInfoEx\">\n");
+    element(xml, 3, "Name", geometry.name());
+    element(xml, 3, "FieldType", "esriFieldTypeGeometry");
+    element(xml, 3, "IsNullable", geometry.nullable() ? "true" : "false");
+    element(xml, 3, "Length", "0");
+    element(xml, 3, "Precision", "0");
+    element(xml, 3, "Scale", "0");
+    element(xml, 3, "Required", "true");
+    xml.append("    </GPFieldInfoEx>\n");
+  }
+
+  private static void writeSpatialReference(
+      StringBuilder xml, GeometryFieldDefinition geometry, CrsDefinition crs) {
+    boolean hasWkt = geometry.wkt() != null && !geometry.wkt().isBlank();
+    String type;
+    if (hasWkt) {
+      type = crs.effectiveWkid() > 0 && crs.effectiveWkid() < 2000
+          ? "typens:GeographicCoordinateSystem"
+          : "typens:ProjectedCoordinateSystem";
+    } else {
+      type = "typens:UnknownCoordinateSystem";
+    }
+    xml.append("  <SpatialReference xsi:type=\"").append(type).append("\">\n");
+    if (hasWkt) {
+      element(xml, 2, "WKT", geometry.wkt());
+    }
+    element(xml, 2, "XOrigin", number(geometry.precision().xOrigin()));
+    element(xml, 2, "YOrigin", number(geometry.precision().yOrigin()));
+    element(xml, 2, "XYScale", number(geometry.precision().xyScale()));
+    element(xml, 2, "ZOrigin", number(geometry.precision().zOrigin()));
+    element(xml, 2, "ZScale", number(geometry.precision().zScale()));
+    element(xml, 2, "MOrigin", number(geometry.precision().mOrigin()));
+    element(xml, 2, "MScale", number(geometry.precision().mScale()));
+    element(xml, 2, "XYTolerance", number(geometry.precision().xyTolerance()));
+    element(xml, 2, "ZTolerance", number(geometry.precision().zTolerance()));
+    element(xml, 2, "MTolerance", number(geometry.precision().mTolerance()));
+    element(xml, 2, "HighPrecision", "true");
+    int wkid = crs.effectiveWkid();
+    if (wkid > 0) {
+      element(xml, 2, "WKID", Integer.toString(wkid));
+      element(xml, 2, "LatestWKID", Integer.toString(wkid));
+    }
+    xml.append("  </SpatialReference>\n");
+  }
+
+  private static String number(double value) {
+    return String.format(Locale.ROOT, "%.17g", value);
+  }
+
+  private static String shapeType(GeometryKind kind) {
+    return switch (kind) {
+      case POINT -> "esriGeometryPoint";
+      case MULTIPOINT -> "esriGeometryMultipoint";
+      case LINE -> "esriGeometryPolyline";
+      case POLYGON -> "esriGeometryPolygon";
+      case MULTIPATCH -> "esriGeometryMultiPatch";
+      case NONE -> "";
+    };
+  }
+
+  private static String esriType(FileGdbFieldType type) {
+    return switch (type) {
+      case INT16 -> "esriFieldTypeSmallInteger";
+      case INT32 -> "esriFieldTypeInteger";
+      case INT64 -> "esriFieldTypeBigInteger";
+      case FLOAT32 -> "esriFieldTypeSingle";
+      case FLOAT64 -> "esriFieldTypeDouble";
+      case STRING -> "esriFieldTypeString";
+      case DATETIME -> "esriFieldTypeDate";
+      case DATE -> "esriFieldTypeDateOnly";
+      case TIME -> "esriFieldTypeTimeOnly";
+      case DATETIME_WITH_OFFSET -> "esriFieldTypeTimestampOffset";
+      case OBJECTID -> "esriFieldTypeOID";
+      case GEOMETRY -> "esriFieldTypeGeometry";
+      case BINARY -> "esriFieldTypeBlob";
+      case RASTER -> "esriFieldTypeRaster";
+      case GUID -> "esriFieldTypeGUID";
+      case GLOBALID -> "esriFieldTypeGlobalID";
+      case XML -> "esriFieldTypeXML";
+      case UNDEFINED -> "";
+    };
+  }
+
+  private static int fieldLength(FileGdbField field) {
+    return switch (field.type()) {
+      case INT16 -> 2;
+      case INT32, FLOAT32 -> 4;
+      case INT64, FLOAT64, DATETIME, DATE, TIME -> 8;
+      case DATETIME_WITH_OFFSET -> 10;
+      case STRING -> field.maxWidth();
+      default -> 0;
+    };
+  }
+
+  private static void element(StringBuilder xml, int indent, String name, String value) {
+    xml.append("  ".repeat(indent))
+        .append('<')
+        .append(name)
+        .append('>')
+        .append(escape(value))
+        .append("</")
+        .append(name)
+        .append(">\n");
+  }
+
+  private static String escape(String value) {
+    if (value == null) {
+      return "";
+    }
+    return value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;");
+  }
+}

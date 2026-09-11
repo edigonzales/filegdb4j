@@ -8,6 +8,9 @@ import ch.so.agi.filegdb.catalog.GdbCatalog;
 import ch.so.agi.filegdb.catalog.GdbItem;
 import ch.so.agi.filegdb.catalog.RelationshipClass;
 import ch.so.agi.filegdb.table.FileGdbTable;
+import ch.so.agi.filegdb.write.FeatureClassDefinition;
+import ch.so.agi.filegdb.write.GdbCreator;
+import ch.so.agi.filegdb.write.GdbFeatureWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -33,15 +36,52 @@ public final class FileGeodatabase implements AutoCloseable {
 
   private final Path directory;
   private final GdbCatalog catalog;
+  private final GdbCreator creator;
 
-  private FileGeodatabase(Path directory, GdbCatalog catalog) {
+  private FileGeodatabase(Path directory, GdbCatalog catalog, GdbCreator creator) {
     this.directory = directory;
     this.catalog = catalog;
+    this.creator = creator;
   }
 
   public static FileGeodatabase open(Path directory) throws IOException {
     Path normalized = directory.toAbsolutePath().normalize();
-    return new FileGeodatabase(normalized, GdbCatalog.open(normalized));
+    return new FileGeodatabase(normalized, GdbCatalog.open(normalized), null);
+  }
+
+  /**
+   * Creates a new file geodatabase directory with its system tables.
+   *
+   * <p>The returned instance is writable: feature classes can be created with
+   * {@link #createFeatureClass(FeatureClassDefinition)}. The catalog snapshot
+   * does not include datasets created afterwards; close and reopen the
+   * database for reading.
+   */
+  public static FileGeodatabase create(Path directory) throws IOException {
+    Path normalized = directory.toAbsolutePath().normalize();
+    GdbCreator creator = GdbCreator.create(normalized);
+    try {
+      return new FileGeodatabase(normalized, GdbCatalog.open(normalized), creator);
+    } catch (Exception e) {
+      creator.close();
+      throw e;
+    }
+  }
+
+  public boolean isWritable() {
+    return creator != null;
+  }
+
+  /**
+   * Creates a feature class with the given definition.
+   *
+   * <p>Close the returned writer before closing the database.
+   */
+  public GdbFeatureWriter createFeatureClass(FeatureClassDefinition definition) throws IOException {
+    if (creator == null) {
+      throw new IllegalStateException("File geodatabase is not writable");
+    }
+    return creator.createFeatureClass(definition);
   }
 
   public Path path() {
@@ -108,7 +148,9 @@ public final class FileGeodatabase implements AutoCloseable {
   }
 
   @Override
-  public void close() {
-    // Catalog readers open and close their table files eagerly.
+  public void close() throws IOException {
+    if (creator != null) {
+      creator.close();
+    }
   }
 }

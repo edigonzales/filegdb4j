@@ -50,8 +50,7 @@ public final class GeometryCodec {
 
   private GeometryCodec() {}
 
-  public static FileGdbGeometry decode(byte[] buffer, GeometryFieldDefinition definition) {
-    if (buffer == null || buffer.length == 0) {
+  public static FileGdbGeometry decode(byte[] buffer, GeometryFieldDefinition definition) {    if (buffer == null || buffer.length == 0) {
       return null;
     }
     Cursor cursor = new Cursor(buffer);
@@ -407,6 +406,220 @@ public final class GeometryCodec {
         }
       }
       return negative ? -value : value;
+    }
+  }
+
+  /**
+   * Encodes a geometry as an Esri shape buffer.
+   *
+   * <p>The Z and M flags of the geometry field definition decide the shape
+   * type and the presence of the Z and M arrays, mirroring GDAL's
+   * {@code EncodeGeometry()}.
+   */
+  public static byte[] encode(FileGdbGeometry geometry, GeometryFieldDefinition definition) {
+    Buffer buffer = new Buffer();
+    CoordinatePrecision precision = definition.precision();
+    boolean hasZ = definition.hasZ();
+    boolean hasM = definition.hasM();
+
+    if (geometry instanceof FileGdbPoint point) {
+      int type;
+      if (hasZ) {
+        type = hasM ? SHPT_POINTZM : SHPT_POINTZ;
+      } else {
+        type = hasM ? SHPT_POINTM : SHPT_POINT;
+      }
+      buffer.u8(type);
+      buffer.varUInt64(encodeUnsigned(point.x(), precision.xOrigin(), precision.xyScale()));
+      buffer.varUInt64(encodeUnsigned(point.y(), precision.yOrigin(), precision.xyScale()));
+      if (hasZ) {
+        buffer.varUInt64(
+            encodeUnsigned(point.z(), precision.zOrigin(), sanitizeScale(precision.zScale())));
+      }
+      if (hasM) {
+        buffer.varUInt64(
+            encodeUnsigned(point.m(), precision.mOrigin(), sanitizeScale(precision.mScale())));
+      }
+      return buffer.toByteArray();
+    }
+
+    if (geometry instanceof FileGdbMultiPoint multiPoint) {
+      int type;
+      if (hasZ) {
+        type = hasM ? SHPT_MULTIPOINTZM : SHPT_MULTIPOINTZ;
+      } else {
+        type = hasM ? SHPT_MULTIPOINTM : SHPT_MULTIPOINT;
+      }
+      buffer.u8(type);
+      buffer.varUInt32(multiPoint.points().size());
+      if (!multiPoint.points().isEmpty()) {
+        writeEnvelope(buffer, multiPoint.points(), precision);
+        writeDeltaArray(buffer, multiPoint.points(), precision, hasZ, hasM);
+      }
+      return buffer.toByteArray();
+    }
+
+    boolean polyline = geometry instanceof FileGdbPolyline;
+    List<FileGdbPart> parts =
+        polyline ? ((FileGdbPolyline) geometry).parts() : ((FileGdbPolygon) geometry).parts();
+    int type;
+    if (polyline) {
+      type = hasZ ? (hasM ? SHPT_ARCZM : SHPT_ARCZ) : (hasM ? SHPT_ARCM : SHPT_ARC);
+    } else {
+      type =
+          hasZ
+              ? (hasM ? SHPT_POLYGONZM : SHPT_POLYGONZ)
+              : (hasM ? SHPT_POLYGONM : SHPT_POLYGON);
+    }
+    buffer.u8(type);
+
+    List<FileGdbPoint> points = new ArrayList<>();
+    for (FileGdbPart part : parts) {
+      points.addAll(part.points());
+    }
+    buffer.varUInt32(points.size());
+    if (points.isEmpty()) {
+      return buffer.toByteArray();
+    }
+    buffer.varUInt32(parts.size());
+    writeEnvelope(buffer, points, precision);
+    for (int i = 0; i < parts.size() - 1; i++) {
+      buffer.varUInt32(parts.get(i).points().size());
+    }
+    writeDeltaArray(buffer, points, precision, hasZ, hasM);
+    return buffer.toByteArray();
+  }
+
+  private static void writeEnvelope(
+      Buffer buffer, List<FileGdbPoint> points, CoordinatePrecision precision) {
+    double minX = Double.POSITIVE_INFINITY;
+    double minY = Double.POSITIVE_INFINITY;
+    double maxX = Double.NEGATIVE_INFINITY;
+    double maxY = Double.NEGATIVE_INFINITY;
+    for (FileGdbPoint point : points) {
+      minX = Math.min(minX, point.x());
+      minY = Math.min(minY, point.y());
+      maxX = Math.max(maxX, point.x());
+      maxY = Math.max(maxY, point.y());
+    }
+    buffer.varUInt64(encodeUnsigned(minX, precision.xOrigin(), precision.xyScale()));
+    buffer.varUInt64(encodeUnsigned(minY, precision.yOrigin(), precision.xyScale()));
+    buffer.varUInt64(encodeUnsigned(maxX - minX, 0, precision.xyScale()));
+    buffer.varUInt64(encodeUnsigned(maxY - minY, 0, precision.xyScale()));
+  }
+
+  private static void writeDeltaArray(
+      Buffer buffer,
+      List<FileGdbPoint> points,
+      CoordinatePrecision precision,
+      boolean hasZ,
+      boolean hasM) {
+    long lastX = 0;
+    long lastY = 0;
+    for (FileGdbPoint point : points) {
+      long x = Math.round((point.x() - precision.xOrigin()) * precision.xyScale());
+      long y = Math.round((point.y() - precision.yOrigin()) * precision.xyScale());
+      buffer.varInt(x - lastX);
+      buffer.varInt(y - lastY);
+      lastX = x;
+      lastY = y;
+    }
+    if (hasZ) {
+      double zScale = sanitizeScale(precision.zScale());
+      long lastZ = 0;
+      for (FileGdbPoint point : points) {
+        long z =
+            Math.round(
+                ((point.z() == null ? 0 : point.z()) - precision.zOrigin()) * zScale);
+        buffer.varInt(z - lastZ);
+        lastZ = z;
+      }
+    }
+    if (hasM) {
+      double mScale = sanitizeScale(precision.mScale());
+      long lastM = 0;
+      for (FileGdbPoint point : points) {
+        long m =
+            Math.round(
+                ((point.m() == null ? 0 : point.m()) - precision.mOrigin()) * mScale);
+        buffer.varInt(m - lastM);
+        lastM = m;
+      }
+    }
+  }
+
+  private static long encodeUnsigned(double value, double origin, double scale) {
+    if (Double.isNaN(value)) {
+      return 0;
+    }
+    double encoded = (value - origin) * scale + 1;
+    if (!(encoded >= 0) || encoded > Long.MAX_VALUE) {
+      throw new IllegalArgumentException("Coordinate out of range: " + value);
+    }
+    return Math.round(encoded);
+  }
+
+  private static double sanitizeScale(double scale) {
+    return scale == 0 ? 1 : scale;
+  }
+
+  /** Growable little endian buffer with the file geodatabase varint encodings. */
+  private static final class Buffer {
+    private byte[] data = new byte[256];
+    private int size;
+
+    void u8(int value) {
+      ensure(1);
+      data[size++] = (byte) value;
+    }
+
+    void varUInt32(long value) {
+      varUInt(value);
+    }
+
+    void varUInt64(long value) {
+      varUInt(value);
+    }
+
+    private void varUInt(long value) {
+      if (value < 0) {
+        throw new IllegalArgumentException("Negative unsigned varint: " + value);
+      }
+      while (true) {
+        if (value >= 0x80) {
+          u8((int) (0x80 | (value & 0x7F)));
+          value >>>= 7;
+        } else {
+          u8((int) value);
+          return;
+        }
+      }
+    }
+
+    void varInt(long value) {
+      boolean negative = value < 0;
+      long magnitude = Math.abs(value);
+      if (magnitude >= 0x40) {
+        int first = (int) (magnitude & 0x3F) | (negative ? 0x40 : 0) | 0x80;
+        u8(first);
+        varUInt(magnitude >>> 6);
+      } else {
+        u8((int) magnitude | (negative ? 0x40 : 0));
+      }
+    }
+
+    private void ensure(int additional) {
+      if (size + additional > data.length) {
+        byte[] grown = new byte[Math.max(data.length * 2, size + additional)];
+        System.arraycopy(data, 0, grown, 0, size);
+        data = grown;
+      }
+    }
+
+    byte[] toByteArray() {
+      byte[] result = new byte[size];
+      System.arraycopy(data, 0, result, 0, size);
+      return result;
     }
   }
 }
