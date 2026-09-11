@@ -95,6 +95,16 @@ class GdbCreatorTest {
               .destinationPrimaryKey("OBJECTID")
               .destinationForeignKey("destination_fk")
               .build());
+
+      try (var table =
+          database.createTable(
+              ch.so.agi.filegdb.write.TableDefinition.builder("documents")
+                  .field(FileGdbField.string("title", 255))
+                  .field(FileGdbField.dateTime("published").asNullable())
+                  .build())) {
+        table.write(new Object[] {"Zonenreglement", LocalDateTime.of(2003, 7, 1, 0, 0)});
+        table.write(new Object[] {"Baureglement", null});
+      }
     }
 
     // Read back with the library.
@@ -150,6 +160,15 @@ class GdbCreatorTest {
         assertThat(row.get("globalid")).isEqualTo(guid);
         assertThat(row.geometry()).isInstanceOf(FileGdbPoint.class);
       }
+
+      try (FileGdbTable table = database.table("documents")) {
+        assertThat(table.isFeatureClass()).isFalse();
+        assertThat(table.rowCount()).isEqualTo(2);
+        assertThat(table.read(1).get("title")).isEqualTo("Zonenreglement");
+        assertThat(table.read(1).get("published"))
+            .isEqualTo(LocalDateTime.of(2003, 7, 1, 0, 0));
+        assertThat(table.read(2).get("published")).isNull();
+      }
     }
 
     // Read back with GDAL.
@@ -158,12 +177,14 @@ class GdbCreatorTest {
       String output = Ogr.run(ogrInfo, "-al", "-so", databasePath.toString());
       assertThat(output).contains("Layer name: roads");
       assertThat(output).contains("Layer name: survey");
+      assertThat(output).contains("Layer name: documents");
       assertThat(output).contains("domain name=road_type");
       assertThat(output).contains("domain name=lane_count");
       assertThat(output).contains("Feature Count: 2");
       String features = Ogr.run(ogrInfo, "-al", "-geom=WKT", databasePath.toString());
       assertThat(features).contains("A1");
       assertThat(features).contains("B2");
+      assertThat(features).contains("Zonenreglement");
       assertThat(features).contains("POLYGON");
       assertThat(features).contains("POINT");
       assertThat(features).contains("2024/05/07 08:30:15");

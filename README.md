@@ -29,6 +29,7 @@ afterwards the library can serve as the backend of `ili2ofgdb`.
 | Domains (coded value, range) and field domain assignment | read |
 | Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | read |
 | Writer: new dataset, feature class, rows (attributes, Point/MultiPoint/Polyline/Polygon, XY/Z/M) | done |
+| Writer: plain attribute tables | done |
 | Writer: domains (coded/range) and relationship classes (1:1, 1:n, n:m with mapping table) | done |
 | Writer: spatial index (`.spx`), attribute indexes, updates/deletes, plain tables API | planned |
 | Curved segments (arc, Bezier, ellipse) | read; writing planned |
@@ -153,4 +154,6 @@ cd gdal-3.13.3-ref && git sparse-checkout set ogr/ogrsf_frmts/openfilegdb
   `objectid64/3features.gdb` (also GDAL test data) cover UTF-16 string
   decoding, sparse rows with large object ids and 3D polygons in the version 4
   table format.
-- `test-data/gdal/curves.gdb` is reserved for the curved segment support.
+- `test-data/gdal/curves.gdb` and `test-data/gdal/curve_circle_by_center.gdb`
+  cover curved segments with interior point arcs, center based arcs and full
+  circles.

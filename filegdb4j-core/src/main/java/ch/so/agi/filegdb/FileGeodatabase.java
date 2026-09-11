@@ -11,6 +11,8 @@ import ch.so.agi.filegdb.table.FileGdbTable;
 import ch.so.agi.filegdb.write.FeatureClassDefinition;
 import ch.so.agi.filegdb.write.GdbCreator;
 import ch.so.agi.filegdb.write.GdbFeatureWriter;
+import ch.so.agi.filegdb.write.GdbTableWriter;
+import ch.so.agi.filegdb.write.TableDefinition;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -90,6 +92,14 @@ public final class FileGeodatabase implements AutoCloseable {
       throw new IllegalStateException("File geodatabase is not writable");
     }
     creator.createDomain(domain);
+  }
+
+  /** Creates a plain attribute table in the catalog. */
+  public GdbTableWriter createTable(TableDefinition definition) throws IOException {
+    if (creator == null) {
+      throw new IllegalStateException("File geodatabase is not writable");
+    }
+    return creator.createTable(definition);
   }
 
   /** Creates a relationship class in the catalog. */

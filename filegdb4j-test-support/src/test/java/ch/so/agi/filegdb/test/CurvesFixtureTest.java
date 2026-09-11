@@ -27,6 +27,30 @@ class CurvesFixtureTest {
   }
 
   @Test
+  void readsCenterBasedArcs() throws Exception {
+    Path centerGdb = TestData.gdal("curve_circle_by_center.gdb");
+    assumeTrue(TestData.available(centerGdb), "curve_circle_by_center.gdb fixture is not available");
+    try (FileGeodatabase gdb = FileGeodatabase.open(centerGdb);
+        FileGdbTable table = gdb.featureClass("test")) {
+      assertThat(table.rowCount()).isEqualTo(6);
+
+      FileGdbRow major = table.read(1);
+      var majorSegment =
+          (ch.so.agi.filegdb.geometry.CircularArcSegment)
+              ((FileGdbPolyline) major.geometry()).parts().get(0).segments().get(0);
+      assertThat(majorSegment.byCenter()).isTrue();
+      Geometry majorGeometry = new JtsGeometryReader(0).read(major.geometry());
+      // Center (0,0), clockwise from (1,0) to (0,1): the major arc.
+      assertThat(majorGeometry.getLength()).isCloseTo(3 * Math.PI / 2, within(1e-3));
+
+      FileGdbRow minor = table.read(2);
+      Geometry minorGeometry = new JtsGeometryReader(0).read(minor.geometry());
+      // Center (5,0), start (5,1) to (6,0): the small arc.
+      assertThat(minorGeometry.getLength()).isCloseTo(Math.PI / 2, within(1e-3));
+    }
+  }
+
+  @Test
   void readsCircularArcPolyline() throws Exception {
     try (FileGeodatabase gdb = FileGeodatabase.open(gdbPath);
         FileGdbTable table = gdb.featureClass("line")) {

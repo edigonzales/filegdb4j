@@ -234,10 +234,12 @@ public final class GdbCreator implements AutoCloseable {
     if (definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
       mappingTableOidName = "OBJECTID";
       createTable(
-          definition.name(),
-          List.of(
-              FileGdbField.string(definition.originForeignKey(), 255).asNullable(),
-              FileGdbField.string(definition.destinationForeignKey(), 255).asNullable()));
+              TableDefinition.builder(definition.name())
+                  .field(FileGdbField.string(definition.originForeignKey(), 255).asNullable())
+                  .field(
+                      FileGdbField.string(definition.destinationForeignKey(), 255).asNullable())
+                  .build())
+          .close();
     }
 
     String xml =
@@ -278,20 +280,24 @@ public final class GdbCreator implements AutoCloseable {
   }
 
   /** Creates a plain attribute table without geometry and registers it. */
-  private void createTable(String name, List<FileGdbField> fields) throws IOException {
+  public GdbTableWriter createTable(TableDefinition definition) throws IOException {
+    if (closed) {
+      throw new IllegalStateException("File geodatabase is already closed");
+    }
+    String name = definition.name();
     Path tableFile = directory.resolve(GdbPaths.tableFileName(nextTableNumber));
     TableFileWriter table = TableFileWriter.create(tableFile, GeometryKind.NONE, false, false);
-    String uuid = Uuids.generate();
     try {
-      for (FileGdbField field : fields) {
+      for (FileGdbField field : definition.fields()) {
         table.addField(field);
       }
       table.writeFieldDescriptors();
+      String uuid = Uuids.generate();
       systemCatalog.writeRow(new Object[] {name, 0L}, null);
       itemRelationships.writeRow(
           new Object[] {Uuids.generate(), rootGuid, uuid, DATASET_IN_FOLDER_UUID, null, null},
           null);
-      String xml = DefinitionXmlWriter.table(name, fields, (int) items.totalRecordCount() + 1);
+      String xml = DefinitionXmlWriter.table(name, definition.fields(), (int) items.totalRecordCount() + 1);
       items.writeRow(
           new Object[] {
             uuid,
@@ -313,8 +319,10 @@ public final class GdbCreator implements AutoCloseable {
           null);
       nextTableNumber++;
       datasetUuids.put(name, uuid);
-    } finally {
+      return new GdbTableWriter(name, table);
+    } catch (Exception e) {
       table.close();
+      throw e;
     }
   }
 
