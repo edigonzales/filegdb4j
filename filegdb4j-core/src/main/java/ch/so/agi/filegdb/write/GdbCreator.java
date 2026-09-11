@@ -27,8 +27,13 @@ public final class GdbCreator implements AutoCloseable {
   private static final String FOLDER_TYPE_UUID = "{f3783e6f-65ca-4514-8315-ce3985dad3b1}";
   private static final String WORKSPACE_TYPE_UUID = "{c673fe0f-7280-404f-8532-20755dd8fc06}";
   private static final String FEATURE_CLASS_TYPE_UUID = "{70737809-852c-4a03-9e22-2cecea5b9bfa}";
+  private static final String TABLE_TYPE_UUID = "{cd06bc3b-789d-4c51-aafa-a467912b8965}";
   private static final String RELATIONSHIP_TYPE_UUID = "{b606a7e1-fa5b-439c-849c-6e9c2481537b}";
+  private static final String CODED_DOMAIN_TYPE_UUID = "{8c368b12-a12e-4c7e-9638-c9c64e69e98f}";
+  private static final String RANGE_DOMAIN_TYPE_UUID = "{c29da988-8c3e-45f7-8b5c-18e51ee7beb4}";
   private static final String DATASET_IN_FOLDER_UUID = "{dc78f1ab-34e4-43ac-ba47-1c4eabd0e7c7}";
+  private static final String DOMAIN_IN_DATASET_UUID = "{17e08adb-2b31-4dcd-8fdd-df529e88f843}";
+  private static final String DATASETS_RELATED_THROUGH_UUID = "{725badab-3452-491b-a795-55f32d67229c}";
 
   private static final String WGS84_WKT =
       "GEOGCS[\"GCS_WGS_1984\",DATUM[\"D_WGS_1984\",SPHEROID[\"WGS_1984\",6378137.0,"
@@ -64,6 +69,7 @@ public final class GdbCreator implements AutoCloseable {
   private final String rootGuid;
   private final String workspaceGuid;
   private final Set<String> spatialRefTexts = new HashSet<>();
+  private final java.util.Map<String, String> datasetUuids = new java.util.HashMap<>();
   private int nextTableNumber;
   private boolean closed;
 
@@ -169,10 +175,146 @@ public final class GdbCreator implements AutoCloseable {
           null);
 
       nextTableNumber++;
+      datasetUuids.put(definition.name(), layerGuid);
       return new GdbFeatureWriter(definition.name(), table);
     } catch (Exception e) {
       table.close();
       throw e;
+    }
+  }
+
+  /** Creates an attribute domain item in the catalog. */
+  public void createDomain(ch.so.agi.filegdb.catalog.Domain domain) throws IOException {
+    if (closed) {
+      throw new IllegalStateException("File geodatabase is already closed");
+    }
+    boolean coded = domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain;
+    String typeUuid = coded ? CODED_DOMAIN_TYPE_UUID : RANGE_DOMAIN_TYPE_UUID;
+    String definitionXml = DefinitionXmlWriter.domain(domain);
+    String uuid = Uuids.generate();
+    items.writeRow(
+        new Object[] {
+          uuid,
+          typeUuid,
+          domain.name(),
+          "",
+          "",
+          null,
+          null,
+          null,
+          null,
+          "",
+          definitionXml,
+          null,
+          null,
+          null,
+          null
+        },
+        null);
+    itemRelationships.writeRow(
+        new Object[] {Uuids.generate(), rootGuid, uuid, DOMAIN_IN_DATASET_UUID, null, null}, null);
+  }
+
+  /** Creates a relationship class item in the catalog. */
+  public void createRelationship(RelationshipDefinition definition) throws IOException {
+    if (closed) {
+      throw new IllegalStateException("File geodatabase is already closed");
+    }
+    String originUuid = datasetUuids.get(definition.originClassName());
+    String destinationUuid = datasetUuids.get(definition.destinationClassName());
+    if (originUuid == null || destinationUuid == null) {
+      throw new GdbException(
+          "Relationship classes can only reference datasets created in this session: "
+              + definition.originClassName()
+              + " -> "
+              + definition.destinationClassName());
+    }
+
+    String mappingTableOidName = "";
+    if (definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
+      mappingTableOidName = "OBJECTID";
+      createTable(
+          definition.name(),
+          List.of(
+              FileGdbField.string(definition.originForeignKey(), 255).asNullable(),
+              FileGdbField.string(definition.destinationForeignKey(), 255).asNullable()));
+    }
+
+    String xml =
+        DefinitionXmlWriter.relationship(
+            definition, (int) items.totalRecordCount() + 1, mappingTableOidName);
+    long subtype =
+        switch (definition.cardinality()) {
+          case ONE_TO_ONE -> 1;
+          case ONE_TO_MANY -> 2;
+          case MANY_TO_MANY -> 3;
+          case UNKNOWN -> 2;
+        };
+    String uuid = Uuids.generate();
+    items.writeRow(
+        new Object[] {
+          uuid,
+          RELATIONSHIP_TYPE_UUID,
+          definition.name(),
+          definition.name().toUpperCase(Locale.ROOT),
+          "\\" + definition.name(),
+          subtype,
+          0L,
+          null,
+          null,
+          "",
+          xml,
+          null,
+          null,
+          1L,
+          null
+        },
+        null);
+    itemRelationships.writeRow(
+        new Object[] {
+          Uuids.generate(), originUuid, destinationUuid, DATASETS_RELATED_THROUGH_UUID, null, null
+        },
+        null);
+  }
+
+  /** Creates a plain attribute table without geometry and registers it. */
+  private void createTable(String name, List<FileGdbField> fields) throws IOException {
+    Path tableFile = directory.resolve(GdbPaths.tableFileName(nextTableNumber));
+    TableFileWriter table = TableFileWriter.create(tableFile, GeometryKind.NONE, false, false);
+    String uuid = Uuids.generate();
+    try {
+      for (FileGdbField field : fields) {
+        table.addField(field);
+      }
+      table.writeFieldDescriptors();
+      systemCatalog.writeRow(new Object[] {name, 0L}, null);
+      itemRelationships.writeRow(
+          new Object[] {Uuids.generate(), rootGuid, uuid, DATASET_IN_FOLDER_UUID, null, null},
+          null);
+      String xml = DefinitionXmlWriter.table(name, fields, (int) items.totalRecordCount() + 1);
+      items.writeRow(
+          new Object[] {
+            uuid,
+            TABLE_TYPE_UUID,
+            name,
+            name.toUpperCase(Locale.ROOT),
+            "\\" + name,
+            0L,
+            0L,
+            null,
+            null,
+            "",
+            xml,
+            null,
+            null,
+            1L,
+            null
+          },
+          null);
+      nextTableNumber++;
+      datasetUuids.put(name, uuid);
+    } finally {
+      table.close();
     }
   }
 

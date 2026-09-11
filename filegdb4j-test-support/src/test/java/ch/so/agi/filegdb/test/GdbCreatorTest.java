@@ -4,94 +4,169 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import ch.so.agi.filegdb.FileGeodatabase;
+import ch.so.agi.filegdb.catalog.CodedValue;
+import ch.so.agi.filegdb.catalog.CodedValueDomain;
 import ch.so.agi.filegdb.catalog.CrsDefinition;
+import ch.so.agi.filegdb.catalog.RangeDomain;
+import ch.so.agi.filegdb.catalog.RelationshipCardinality;
 import ch.so.agi.filegdb.geometry.FileGdbPart;
 import ch.so.agi.filegdb.geometry.FileGdbPoint;
 import ch.so.agi.filegdb.geometry.FileGdbPolygon;
 import ch.so.agi.filegdb.geometry.GeometryFieldDefinition;
 import ch.so.agi.filegdb.geometry.GeometryKind;
+import ch.so.agi.filegdb.table.FileGdbField;
 import ch.so.agi.filegdb.table.FileGdbRow;
 import ch.so.agi.filegdb.table.FileGdbTable;
 import ch.so.agi.filegdb.write.FeatureClassDefinition;
 import ch.so.agi.filegdb.write.GdbFeatureWriter;
+import ch.so.agi.filegdb.write.RelationshipDefinition;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** End to end creation of a file geodatabase with one feature class. */
+/** End to end creation of a file geodatabase with feature classes, domains and relationships. */
 class GdbCreatorTest {
 
   @Test
-  void createsFeatureClassReadableByJavaAndGdal(@TempDir Path directory) throws Exception {
+  void createsFeatureClassesDomainsAndRelationship(@TempDir Path directory) throws Exception {
     Path databasePath = directory.resolve("sample.gdb");
-    java.time.LocalDateTime timestamp = java.time.LocalDateTime.of(2024, 5, 7, 8, 30, 15);
-    java.util.UUID guid = java.util.UUID.fromString("9f8e7d6c-5b4a-4938-8271-0a1b2c3d4e5f");
+    LocalDateTime timestamp = LocalDateTime.of(2024, 5, 7, 8, 30, 15);
+    UUID guid = UUID.fromString("9f8e7d6c-5b4a-4938-8271-0a1b2c3d4e5f");
+
     try (FileGeodatabase database = FileGeodatabase.create(databasePath)) {
-      FeatureClassDefinition definition =
+      database.createDomain(
+          new CodedValueDomain(
+              "road_type",
+              ch.so.agi.filegdb.table.FileGdbFieldType.STRING,
+              "Road types",
+              List.of(new CodedValue("Main road", "main"), new CodedValue("Minor road", "minor"))));
+      database.createDomain(
+          new RangeDomain(
+              "lane_count", ch.so.agi.filegdb.table.FileGdbFieldType.INT32, "Lane count", "1",
+              "8"));
+
+      FeatureClassDefinition roads =
           FeatureClassDefinition.builder("roads")
-              .field(ch.so.agi.filegdb.table.FileGdbField.string("name", 255).asRequired())
-              .field(ch.so.agi.filegdb.table.FileGdbField.integer("lanes").asNullable())
-              .field(ch.so.agi.filegdb.table.FileGdbField.real("length").asNullable())
+              .field(FileGdbField.string("name", 255).asRequired())
+              .field(FileGdbField.string("type", 40).asNullable().withDomain("road_type"))
+              .field(FileGdbField.integer("lanes").asNullable().withDomain("lane_count"))
+              .field(FileGdbField.real("length").asNullable())
               .geometry(GeometryFieldDefinition.of("shape", GeometryKind.POLYGON))
               .crs(new CrsDefinition(2056, 2056, ""))
               .build();
-      try (GdbFeatureWriter writer = database.createFeatureClass(definition)) {
-        writer.write(new Object[] {"A1", 2L, 12.5}, square(2600000, 1200000, 100));
-        writer.write(new Object[] {"B2", null, null}, null);
+      try (GdbFeatureWriter writer = database.createFeatureClass(roads)) {
+        writer.write(new Object[] {"A1", "main", 2L, 12.5}, square(2600000, 1200000, 100));
+        writer.write(new Object[] {"B2", null, null, null}, null);
       }
 
-      FeatureClassDefinition surveyDefinition =
+      FeatureClassDefinition survey =
           FeatureClassDefinition.builder("survey")
-              .field(ch.so.agi.filegdb.table.FileGdbField.string("label", 64))
-              .field(ch.so.agi.filegdb.table.FileGdbField.dateTime("created"))
-              .field(ch.so.agi.filegdb.table.FileGdbField.guid("globalid"))
+              .field(FileGdbField.string("label", 64))
+              .field(FileGdbField.integer("road_id").asNullable())
+              .field(FileGdbField.dateTime("created"))
+              .field(FileGdbField.guid("globalid"))
               .geometry(GeometryFieldDefinition.of("shape", GeometryKind.POINT))
               .crs(new CrsDefinition(2056, 2056, ""))
               .build();
-      try (GdbFeatureWriter writer = database.createFeatureClass(surveyDefinition)) {
+      try (GdbFeatureWriter writer = database.createFeatureClass(survey)) {
         writer.write(
-            new Object[] {"first", timestamp, guid},
-            new FileGdbPoint(2600050, 1200050));
+            new Object[] {"first", 1L, timestamp, guid}, new FileGdbPoint(2600050, 1200050));
       }
+
+      database.createRelationship(
+          RelationshipDefinition.builder("roads_survey")
+              .originClass("roads")
+              .destinationClass("survey")
+              .cardinality(RelationshipCardinality.ONE_TO_MANY)
+              .originPrimaryKey("OBJECTID")
+              .originForeignKey("road_id")
+              .labels("surveys", "road")
+              .build());
+      database.createRelationship(
+          RelationshipDefinition.builder("roads_survey_m2m")
+              .originClass("roads")
+              .destinationClass("survey")
+              .cardinality(RelationshipCardinality.MANY_TO_MANY)
+              .originPrimaryKey("OBJECTID")
+              .originForeignKey("origin_fk")
+              .destinationPrimaryKey("OBJECTID")
+              .destinationForeignKey("destination_fk")
+              .build());
     }
 
     // Read back with the library.
-    try (FileGeodatabase database = FileGeodatabase.open(databasePath);
-        FileGdbTable table = database.featureClass("roads")) {
-      assertThat(table.rowCount()).isEqualTo(2);
-      assertThat(table.crs().effectiveWkid()).isEqualTo(2056);
-      FileGdbRow row = table.read(1);
-      assertThat(row.get("name")).isEqualTo("A1");
-      assertThat(row.get("lanes")).isEqualTo(2L);
-      assertThat(row.get("length")).isEqualTo(12.5);
-      FileGdbPolygon polygon = (FileGdbPolygon) row.geometry();
-      assertThat(polygon.parts()).hasSize(1);
-      assertThat(polygon.parts().get(0).points()).hasSize(5);
-      assertThat(table.read(2).geometry()).isNull();
-    }
-    try (FileGeodatabase database = FileGeodatabase.open(databasePath);
-        FileGdbTable table = database.featureClass("survey")) {
-      assertThat(table.rowCount()).isEqualTo(1);
-      FileGdbRow row = table.read(1);
-      assertThat(row.get("label")).isEqualTo("first");
-      assertThat(row.get("created")).isEqualTo(timestamp);
-      assertThat(row.get("globalid")).isEqualTo(guid);
-      assertThat(row.geometry()).isInstanceOf(FileGdbPoint.class);
+    try (FileGeodatabase database = FileGeodatabase.open(databasePath)) {
+      assertThat(database.domains())
+          .extracting(ch.so.agi.filegdb.catalog.Domain::name)
+          .containsExactlyInAnyOrder("road_type", "lane_count");
+      assertThat(database.relationships())
+          .extracting(ch.so.agi.filegdb.catalog.RelationshipClass::name)
+          .contains("roads_survey", "roads_survey_m2m");
+      var manyToMany =
+          database.relationships().stream()
+              .filter(r -> r.name().equals("roads_survey_m2m"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(manyToMany.cardinality()).isEqualTo(RelationshipCardinality.MANY_TO_MANY);
+      assertThat(manyToMany.destinationKeys())
+          .extracting(ch.so.agi.filegdb.catalog.RelationshipKey::objectKeyName)
+          .containsExactly("OBJECTID", "destination_fk");
+      var relationship =
+          database.relationships().stream()
+              .filter(r -> r.name().equals("roads_survey"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(relationship.cardinality()).isEqualTo(RelationshipCardinality.ONE_TO_MANY);
+      assertThat(relationship.originClassName()).isEqualTo("roads");
+      assertThat(relationship.destinationClassName()).isEqualTo("survey");
+      assertThat(relationship.forwardLabel()).isEqualTo("surveys");
+
+      try (FileGdbTable table = database.featureClass("roads")) {
+        assertThat(table.rowCount()).isEqualTo(2);
+        assertThat(table.crs().effectiveWkid()).isEqualTo(2056);
+        assertThat(table.field("lanes").orElseThrow().domain()).isEqualTo("lane_count");
+        assertThat(table.domain("lanes")).containsInstanceOf(RangeDomain.class);
+        assertThat(table.domain("type")).containsInstanceOf(CodedValueDomain.class);
+
+        FileGdbRow row = table.read(1);
+        assertThat(row.get("name")).isEqualTo("A1");
+        assertThat(row.get("type")).isEqualTo("main");
+        assertThat(row.get("lanes")).isEqualTo(2L);
+        assertThat(row.get("length")).isEqualTo(12.5);
+        FileGdbPolygon polygon = (FileGdbPolygon) row.geometry();
+        assertThat(polygon.parts()).hasSize(1);
+        assertThat(polygon.parts().get(0).points()).hasSize(5);
+        assertThat(table.read(2).geometry()).isNull();
+      }
+
+      try (FileGdbTable table = database.featureClass("survey")) {
+        assertThat(table.rowCount()).isEqualTo(1);
+        FileGdbRow row = table.read(1);
+        assertThat(row.get("label")).isEqualTo("first");
+        assertThat(row.get("created")).isEqualTo(timestamp);
+        assertThat(row.get("globalid")).isEqualTo(guid);
+        assertThat(row.geometry()).isInstanceOf(FileGdbPoint.class);
+      }
     }
 
     // Read back with GDAL.
     Path ogrInfo = Ogr.ogrInfo();
     if (ogrInfo != null) {
-      String output = Ogr.run(ogrInfo, "-al", "-geom=WKT", databasePath.toString());
+      String output = Ogr.run(ogrInfo, "-al", "-so", databasePath.toString());
       assertThat(output).contains("Layer name: roads");
       assertThat(output).contains("Layer name: survey");
+      assertThat(output).contains("domain name=road_type");
+      assertThat(output).contains("domain name=lane_count");
       assertThat(output).contains("Feature Count: 2");
-      assertThat(output).contains("A1");
-      assertThat(output).contains("B2");
-      assertThat(output).contains("POLYGON");
-      assertThat(output).contains("POINT");
-      assertThat(output).contains("2024/05/07 08:30:15");
+      String features = Ogr.run(ogrInfo, "-al", "-geom=WKT", databasePath.toString());
+      assertThat(features).contains("A1");
+      assertThat(features).contains("B2");
+      assertThat(features).contains("POLYGON");
+      assertThat(features).contains("POINT");
+      assertThat(features).contains("2024/05/07 08:30:15");
     }
 
     Path ogr2Ogr = Ogr.ogr2Ogr();

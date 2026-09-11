@@ -27,8 +27,8 @@ Vector Reader/Writer; afterwards it can serve as the backend of `ili2ofgdb`.
 | Domains (coded value, range) and field domain assignment | read |
 | Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | read |
 | Writer: new dataset, feature class, rows (attributes, Point/MultiPoint/Polyline/Polygon, XY/Z/M) | done |
-| Writer: domains and relationship classes in the catalog | planned |
-| Writer: spatial index (`.spx`), attribute indexes, updates/deletes | planned |
+| Writer: domains (coded/range) and relationship classes (1:1, 1:n, n:m with mapping table) | done |
+| Writer: spatial index (`.spx`), attribute indexes, updates/deletes, plain tables API | planned |
 | Curved segments (arc, Bezier, ellipse) | planned |
 | MultiPatch | not supported |
 

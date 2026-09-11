@@ -84,6 +84,23 @@ public final class FileGeodatabase implements AutoCloseable {
     return creator.createFeatureClass(definition);
   }
 
+  /** Creates an attribute domain in the catalog. */
+  public void createDomain(Domain domain) throws IOException {
+    if (creator == null) {
+      throw new IllegalStateException("File geodatabase is not writable");
+    }
+    creator.createDomain(domain);
+  }
+
+  /** Creates a relationship class in the catalog. */
+  public void createRelationship(ch.so.agi.filegdb.write.RelationshipDefinition definition)
+      throws IOException {
+    if (creator == null) {
+      throw new IllegalStateException("File geodatabase is not writable");
+    }
+    creator.createRelationship(definition);
+  }
+
   public Path path() {
     return directory;
   }

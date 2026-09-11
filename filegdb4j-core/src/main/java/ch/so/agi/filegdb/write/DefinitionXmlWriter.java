@@ -18,8 +18,7 @@ final class DefinitionXmlWriter {
 
   private DefinitionXmlWriter() {}
 
-  static String featureClass(FeatureClassDefinition definition, int dsid) {
-    GeometryFieldDefinition geometry = definition.geometry();
+  static String featureClass(FeatureClassDefinition definition, int dsid) {    GeometryFieldDefinition geometry = definition.geometry();
     StringBuilder xml = new StringBuilder(2048);
     xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     xml.append("<DEFeatureClassInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
@@ -110,6 +109,200 @@ final class DefinitionXmlWriter {
     element(xml, 3, "Scale", "0");
     element(xml, 3, "Required", "true");
     xml.append("    </GPFieldInfoEx>\n");
+  }
+
+  static String table(String name, java.util.List<FileGdbField> fields, int dsid) {
+    StringBuilder xml = new StringBuilder(1024);
+    xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.append("<DETableInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+    xml.append(" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"");
+    xml.append(" xmlns:typens=\"http://www.esri.com/schemas/ArcGIS/10.3\"");
+    xml.append(" xsi:type=\"typens:DETableInfo\">\n");
+    element(xml, 1, "CatalogPath", "\\" + name);
+    element(xml, 1, "Name", name);
+    element(xml, 1, "ChildrenExpanded", "false");
+    element(xml, 1, "DatasetType", "esriDTTable");
+    element(xml, 1, "DSID", Integer.toString(dsid));
+    element(xml, 1, "Versioned", "false");
+    element(xml, 1, "CanVersion", "false");
+    element(xml, 1, "HasOID", "true");
+    element(xml, 1, "OIDFieldName", "OBJECTID");
+    xml.append("  <GPFieldInfoExs xsi:type=\"typens:ArrayOfGPFieldInfoEx\">\n");
+    xml.append("    <GPFieldInfoEx xsi:type=\"typens:GPFieldInfoEx\">\n");
+    element(xml, 3, "Name", "OBJECTID");
+    element(xml, 3, "FieldType", "esriFieldTypeOID");
+    element(xml, 3, "IsNullable", "false");
+    element(xml, 3, "Length", "4");
+    element(xml, 3, "Precision", "0");
+    element(xml, 3, "Scale", "0");
+    element(xml, 3, "Required", "true");
+    xml.append("    </GPFieldInfoEx>\n");
+    for (FileGdbField field : fields) {
+      writeField(xml, field);
+    }
+    xml.append("  </GPFieldInfoExs>\n");
+    element(xml, 1, "CLSID", "{7A566981-C114-11D2-8A28-006097AFF44E}");
+    element(xml, 1, "EXTCLSID", "");
+    element(xml, 1, "IsTimeInUTC", "false");
+    xml.append("</DETableInfo>");
+    return xml.toString();
+  }
+
+  static String domain(ch.so.agi.filegdb.catalog.Domain domain) {
+    boolean coded = domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain;
+    StringBuilder xml = new StringBuilder(512);
+    xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.append('<')
+        .append(coded ? "GPCodedValueDomain2" : "GPRangeDomain2")
+        .append(" xsi:type=\"typens:")
+        .append(coded ? "GPCodedValueDomain2" : "GPRangeDomain2")
+        .append("\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"")
+        .append(" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"")
+        .append(" xmlns:typens=\"http://www.esri.com/schemas/ArcGIS/10.1\">\n");
+    element(xml, 1, "DomainName", domain.name());
+    element(xml, 1, "FieldType", esriType(domain.fieldType()));
+    element(xml, 1, "MergePolicy", "esriMPTDefaultValue");
+    element(xml, 1, "SplitPolicy", "esriSPTDefaultValue");
+    element(xml, 1, "Description", domain.description());
+    element(xml, 1, "Owner", "");
+    if (domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain codedDomain) {
+      xml.append("  <CodedValues xsi:type=\"typens:ArrayOfCodedValue\">\n");
+      for (var value : codedDomain.values()) {
+        xml.append("    <CodedValue xsi:type=\"typens:CodedValue\">\n");
+        element(xml, 3, "Name", value.name());
+        xml.append("      <Code xsi:type=\"")
+            .append(codeType(domain.fieldType()))
+            .append("\">")
+            .append(escape(value.code()))
+            .append("</Code>\n");
+        xml.append("    </CodedValue>\n");
+      }
+      xml.append("  </CodedValues>\n");
+    } else if (domain instanceof ch.so.agi.filegdb.catalog.RangeDomain rangeDomain) {
+      element(xml, 1, "MinValue", rangeDomain.minValue());
+      element(xml, 1, "MaxValue", rangeDomain.maxValue());
+    }
+    xml.append("</").append(coded ? "GPCodedValueDomain2" : "GPRangeDomain2").append('>');
+    return xml.toString();
+  }
+
+  static String relationship(
+      RelationshipDefinition definition, int dsid, String mappingTableOidName) {
+    boolean manyToMany = definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY;
+    StringBuilder xml = new StringBuilder(1536);
+    xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.append("<DERelationshipClassInfo xsi:type=\"typens:DERelationshipClassInfo\"");
+    xml.append(" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+    xml.append(" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"");
+    xml.append(" xmlns:typens=\"http://www.esri.com/schemas/ArcGIS/10.1\">\n");
+    element(xml, 1, "CatalogPath", "\\" + definition.name());
+    element(xml, 1, "Name", definition.name());
+    element(xml, 1, "ChildrenExpanded", "false");
+    element(xml, 1, "DatasetType", "esriDTRelationshipClass");
+    element(xml, 1, "DSID", Integer.toString(dsid));
+    element(xml, 1, "Versioned", "false");
+    element(xml, 1, "CanVersion", "false");
+    element(xml, 1, "ConfigurationKeyword", "");
+    element(xml, 1, "RequiredGeodatabaseClientVersion", "10.0");
+    element(xml, 1, "HasOID", "false");
+    xml.append("  <GPFieldInfoExs xsi:type=\"typens:ArrayOfGPFieldInfoEx\">\n");
+    if (manyToMany) {
+      writeFieldName(xml, mappingTableOidName);
+      writeFieldName(xml, definition.originForeignKey());
+      writeFieldName(xml, definition.destinationForeignKey());
+      element(xml, 1, "OIDFieldName", mappingTableOidName);
+    } else {
+      element(xml, 1, "OIDFieldName", "");
+    }
+    xml.append("  </GPFieldInfoExs>\n");
+    element(xml, 1, "CLSID", "");
+    element(xml, 1, "EXTCLSID", "");
+    xml.append("  <RelationshipClassNames xsi:type=\"typens:Names\"/>\n");
+    element(xml, 1, "AliasName", "");
+    element(xml, 1, "ModelName", "");
+    element(xml, 1, "HasGlobalID", "false");
+    element(xml, 1, "GlobalIDFieldName", "");
+    element(xml, 1, "RasterFieldName", "");
+    xml.append("  <ExtensionProperties xsi:type=\"typens:PropertySet\">\n");
+    xml.append("    <PropertyArray xsi:type=\"typens:ArrayOfPropertySetProperty\"/>\n");
+    xml.append("  </ExtensionProperties>\n");
+    xml.append("  <ControllerMemberships xsi:type=\"typens:ArrayOfControllerMembership\"/>\n");
+    element(xml, 1, "EditorTrackingEnabled", "false");
+    element(xml, 1, "CreatorFieldName", "");
+    element(xml, 1, "CreatedAtFieldName", "");
+    element(xml, 1, "EditorFieldName", "");
+    element(xml, 1, "EditedAtFieldName", "");
+    element(xml, 1, "IsTimeInUTC", "true");
+    element(xml, 1, "Cardinality", cardinality(definition.cardinality()));
+    element(xml, 1, "Notification", "esriRelNotificationNone");
+    element(xml, 1, "IsAttributed", "false");
+    element(xml, 1, "IsComposite", definition.composite() ? "true" : "false");
+    xml.append("  <OriginClassNames xsi:type=\"typens:Names\">\n");
+    element(xml, 2, "Name", definition.originClassName());
+    xml.append("  </OriginClassNames>\n");
+    xml.append("  <DestinationClassNames xsi:type=\"typens:Names\">\n");
+    element(xml, 2, "Name", definition.destinationClassName());
+    xml.append("  </DestinationClassNames>\n");
+    element(xml, 1, "KeyType", "esriRelKeyTypeSingle");
+    element(xml, 1, "ClassKey", "esriRelClassKeyUndefined");
+    element(xml, 1, "ForwardPathLabel", definition.forwardLabel());
+    element(xml, 1, "BackwardPathLabel", definition.backwardLabel());
+    element(xml, 1, "IsReflexive", "false");
+    xml.append("  <OriginClassKeys xsi:type=\"typens:ArrayOfRelationshipClassKey\">\n");
+    writeKey(xml, definition.originPrimaryKey(), "esriRelKeyRoleOriginPrimary");
+    if (manyToMany) {
+      writeKey(xml, definition.originForeignKey(), "esriRelKeyRoleOriginForeign");
+    } else {
+      writeKey(xml, definition.originForeignKey(), "esriRelKeyRoleOriginForeign");
+    }
+    xml.append("  </OriginClassKeys>\n");
+    if (manyToMany) {
+      xml.append("  <DestinationClassKeys xsi:type=\"typens:ArrayOfRelationshipClassKey\">\n");
+      writeKey(xml, definition.destinationPrimaryKey(), "esriRelKeyRoleDestinationPrimary");
+      writeKey(xml, definition.destinationForeignKey(), "esriRelKeyRoleDestinationForeign");
+      xml.append("  </DestinationClassKeys>\n");
+    }
+    xml.append("  <RelationshipRules xsi:type=\"typens:ArrayOfRelationshipRule\"/>\n");
+    element(xml, 1, "IsAttachmentRelationship", "false");
+    element(xml, 1, "ChangeTracked", "false");
+    element(xml, 1, "ReplicaTracked", "false");
+    xml.append("</DERelationshipClassInfo>");
+    return xml.toString();
+  }
+
+  private static void writeFieldName(StringBuilder xml, String name) {
+    xml.append("    <GPFieldInfoEx xsi:type=\"typens:GPFieldInfoEx\">\n");
+    element(xml, 3, "Name", name);
+    xml.append("    </GPFieldInfoEx>\n");
+  }
+
+  private static void writeKey(StringBuilder xml, String objectKeyName, String role) {
+    xml.append("    <RelationshipClassKey xsi:type=\"typens:RelationshipClassKey\">\n");
+    element(xml, 3, "ObjectKeyName", objectKeyName);
+    element(xml, 3, "ClassKeyName", "");
+    element(xml, 3, "KeyRole", role);
+    xml.append("    </RelationshipClassKey>\n");
+  }
+
+  private static String cardinality(ch.so.agi.filegdb.catalog.RelationshipCardinality cardinality) {
+    return switch (cardinality) {
+      case ONE_TO_ONE -> "esriRelCardinalityOneToOne";
+      case ONE_TO_MANY -> "esriRelCardinalityOneToMany";
+      case MANY_TO_MANY -> "esriRelCardinalityManyToMany";
+      case UNKNOWN -> "esriRelCardinalityOneToMany";
+    };
+  }
+
+  private static String codeType(ch.so.agi.filegdb.table.FileGdbFieldType type) {
+    return switch (type) {
+      case INT16 -> "xs:short";
+      case INT32 -> "xs:int";
+      case INT64 -> "xs:long";
+      case FLOAT32 -> "xs:float";
+      case FLOAT64 -> "xs:double";
+      case DATETIME, DATE, TIME, DATETIME_WITH_OFFSET -> "xs:dateTime";
+      default -> "xs:string";
+    };
   }
 
   private static void writeSpatialReference(
