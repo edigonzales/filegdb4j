@@ -2,8 +2,11 @@ package ch.so.agi.filegdb;
 
 import ch.so.agi.filegdb.catalog.Dataset;
 import ch.so.agi.filegdb.catalog.DatasetKind;
+import ch.so.agi.filegdb.catalog.DefinitionXml;
+import ch.so.agi.filegdb.catalog.Domain;
 import ch.so.agi.filegdb.catalog.GdbCatalog;
 import ch.so.agi.filegdb.catalog.GdbItem;
+import ch.so.agi.filegdb.catalog.RelationshipClass;
 import ch.so.agi.filegdb.table.FileGdbTable;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -71,16 +74,31 @@ public final class FileGeodatabase implements AutoCloseable {
     return catalog;
   }
 
+  /** Attribute domains declared in the catalog. */
+  public List<Domain> domains() {
+    return catalog.domains();
+  }
+
+  public Optional<Domain> domain(String name) {
+    return catalog.domain(name);
+  }
+
+  /** Relationship classes declared in the catalog. */
+  public List<RelationshipClass> relationships() {
+    return catalog.relationships();
+  }
+
   public FileGdbTable featureClass(String name) throws IOException {
     Dataset dataset = requireDataset(name);
     if (!dataset.isFeatureClass()) {
       throw new IllegalArgumentException("Dataset is not a feature class: " + name);
     }
-    return new FileGdbTable(dataset);
+    return new FileGdbTable(dataset, DefinitionXml.fieldInfo(dataset.definition()), catalog);
   }
 
   public FileGdbTable table(String name) throws IOException {
-    return new FileGdbTable(requireDataset(name));
+    Dataset dataset = requireDataset(name);
+    return new FileGdbTable(dataset, DefinitionXml.fieldInfo(dataset.definition()), catalog);
   }
 
   private Dataset requireDataset(String name) {

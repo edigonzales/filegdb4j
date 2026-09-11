@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.within;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import ch.so.agi.filegdb.FileGeodatabase;
+import ch.so.agi.filegdb.catalog.CodedValue;
+import ch.so.agi.filegdb.catalog.CodedValueDomain;
 import ch.so.agi.filegdb.catalog.Dataset;
+import ch.so.agi.filegdb.catalog.Domain;
 import ch.so.agi.filegdb.geometry.FileGdbPart;
 import ch.so.agi.filegdb.geometry.FileGdbPoint;
 import ch.so.agi.filegdb.geometry.FileGdbPolygon;
@@ -114,6 +117,23 @@ class NplFixtureTest {
       assertThat(row).isNotNull();
       assertThat(row.get("tag")).isEqualTo("ch.interlis.ili2c.ilidirs");
       assertThat(row.get("setting")).isInstanceOf(String.class);
+    }
+  }
+
+  @Test
+  void resolvesDomainAssignments() throws Exception {
+    try (FileGeodatabase gdb = FileGeodatabase.open(gdbPath)) {
+      assertThat(gdb.domains()).isNotEmpty();
+      try (FileGdbTable table = gdb.featureClass("grundnutzung")) {
+        assertThat(table.field("typ_verbindlichkeit").orElseThrow().domain())
+            .isEqualTo(
+                "SO_ARP_Nutzungsplanung_Publikation_20201005_Nutzungsplanung_Verbindlichkeit");
+        Domain domain = table.domain("typ_verbindlichkeit").orElseThrow();
+        assertThat(domain).isInstanceOf(CodedValueDomain.class);
+        assertThat(domain.values())
+            .extracting(CodedValue::name)
+            .contains("Nutzungsplanfestlegung");
+      }
     }
   }
 

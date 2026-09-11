@@ -28,6 +28,8 @@ public final class GdbCatalog {
   private final List<String> tableNames;
   private final Map<String, Integer> tableNumberByName;
   private final List<GdbItem> items;
+  private volatile List<Domain> domains;
+  private volatile List<RelationshipClass> relationships;
 
   private GdbCatalog(
       Path directory,
@@ -116,6 +118,61 @@ public final class GdbCatalog {
       }
     }
     return Optional.ofNullable(fallback);
+  }
+
+  /** Attribute domains declared in the catalog. */
+  public List<Domain> domains() {
+    List<Domain> result = domains;
+    if (result == null) {
+      synchronized (this) {
+        result = domains;
+        if (result == null) {
+          List<Domain> parsed = new ArrayList<>();
+          for (GdbItem item : items) {
+            Domain domain = DefinitionXml.domain(item.definition());
+            if (domain != null && domain.name() != null && !domain.name().isBlank()) {
+              parsed.add(domain);
+            }
+          }
+          result = List.copyOf(parsed);
+          domains = result;
+        }
+      }
+    }
+    return result;
+  }
+
+  public Optional<Domain> domain(String name) {
+    for (Domain domain : domains()) {
+      if (domain.name().equals(name)) {
+        return Optional.of(domain);
+      }
+    }
+    return Optional.empty();
+  }
+
+  /** Relationship classes declared in the catalog. */
+  public List<RelationshipClass> relationships() {
+    List<RelationshipClass> result = relationships;
+    if (result == null) {
+      synchronized (this) {
+        result = relationships;
+        if (result == null) {
+          List<RelationshipClass> parsed = new ArrayList<>();
+          for (GdbItem item : items) {
+            RelationshipClass relationship = DefinitionXml.relationship(item.definition());
+            if (relationship != null
+                && relationship.name() != null
+                && !relationship.name().isBlank()) {
+              parsed.add(relationship);
+            }
+          }
+          result = List.copyOf(parsed);
+          relationships = result;
+        }
+      }
+    }
+    return result;
   }
 
   private static DatasetKind kindOf(String definition) {

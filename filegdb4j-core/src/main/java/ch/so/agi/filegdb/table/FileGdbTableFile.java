@@ -22,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -66,7 +67,8 @@ public final class FileGdbTableFile implements AutoCloseable {
   private final byte[] blockMap;
   private final boolean reliableObjectIds;
 
-  private FileGdbTableFile(Path path, FileChannel table) throws IOException {
+  private FileGdbTableFile(Path path, FileChannel table, Map<String, FieldMetadata> metadata)
+      throws IOException {
     this.path = path;
     this.table = table;
 
@@ -139,7 +141,7 @@ public final class FileGdbTableFile implements AutoCloseable {
 
     byte[] descriptor =
         readFully(table, offsetFieldDesc + 14, Math.max(0, descriptorLength - 10));
-    FieldParseResult parsed = parseFields(descriptor, fieldCount);
+    FieldParseResult parsed = parseFields(descriptor, fieldCount, metadata);
     this.fields = parsed.fields();
     this.geomField = parsed.geomField();
     this.objectIdFieldIndex = parsed.objectIdFieldIndex();
@@ -149,9 +151,19 @@ public final class FileGdbTableFile implements AutoCloseable {
   }
 
   public static FileGdbTableFile open(Path path) throws IOException {
+    return open(path, Map.of());
+  }
+
+  /**
+   * Opens a table with catalog metadata for fields. The metadata supplies the
+   * assigned domain and the high precision flag, which are not part of the
+   * binary table header.
+   */
+  public static FileGdbTableFile open(Path path, Map<String, FieldMetadata> metadata)
+      throws IOException {
     FileChannel channel = FileChannel.open(path, StandardOpenOption.READ);
     try {
-      return new FileGdbTableFile(path, channel);
+      return new FileGdbTableFile(path, channel, metadata);
     } catch (Exception e) {
       channel.close();
       throw e;
@@ -391,7 +403,8 @@ public final class FileGdbTableFile implements AutoCloseable {
     }
   }
 
-  private FieldParseResult parseFields(byte[] descriptor, int expectedFieldCount) {
+  private FieldParseResult parseFields(
+      byte[] descriptor, int expectedFieldCount, Map<String, FieldMetadata> metadata) {
     ByteCursor cursor = new ByteCursor(descriptor);
     List<FileGdbField> parsedFields = new ArrayList<>(expectedFieldCount);
     FileGdbGeomField parsedGeomField = null;
@@ -440,6 +453,7 @@ public final class FileGdbTableFile implements AutoCloseable {
         if (nullable) {
           parsedNullableCount++;
         }
+        FieldMetadata fieldMetadata = metadata.getOrDefault(name, FieldMetadata.EMPTY);
         parsedFields.add(
             new FileGdbField(
                 name,
@@ -449,7 +463,8 @@ public final class FileGdbTableFile implements AutoCloseable {
                 (flags & FLAG_REQUIRED) != 0,
                 (flags & FLAG_EDITABLE) != 0,
                 maxWidth,
-                false));
+                fieldMetadata.highPrecision(),
+                fieldMetadata.domain()));
         continue;
       }
 
@@ -544,9 +559,18 @@ public final class FileGdbTableFile implements AutoCloseable {
               gridResolution);
       parsedGeomField =
           new FileGdbGeomField(name, alias, nullable, wkt, definition);
+      FieldMetadata fieldMetadata = metadata.getOrDefault(name, FieldMetadata.EMPTY);
       parsedFields.add(
           new FileGdbField(
-              name, alias, FileGdbFieldType.GEOMETRY, nullable, false, false, 0, false));
+              name,
+              alias,
+              FileGdbFieldType.GEOMETRY,
+              nullable,
+              false,
+              false,
+              0,
+              fieldMetadata.highPrecision(),
+              fieldMetadata.domain()));
       if (nullable) {
         parsedNullableCount++;
       }

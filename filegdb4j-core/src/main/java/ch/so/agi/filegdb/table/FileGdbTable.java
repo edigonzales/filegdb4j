@@ -2,12 +2,16 @@ package ch.so.agi.filegdb.table;
 
 import ch.so.agi.filegdb.catalog.CrsDefinition;
 import ch.so.agi.filegdb.catalog.Dataset;
+import ch.so.agi.filegdb.catalog.Domain;
+import ch.so.agi.filegdb.catalog.GdbCatalog;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 /**
  * Public read access to one dataset of a file geodatabase.
@@ -18,10 +22,17 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
 
   private final Dataset dataset;
   private final FileGdbTableFile tableFile;
+  private final GdbCatalog catalog;
 
   public FileGdbTable(Dataset dataset) throws IOException {
+    this(dataset, Map.of(), null);
+  }
+
+  public FileGdbTable(Dataset dataset, Map<String, FieldMetadata> metadata, GdbCatalog catalog)
+      throws IOException {
     this.dataset = dataset;
-    this.tableFile = FileGdbTableFile.open(dataset.tableFile());
+    this.catalog = catalog;
+    this.tableFile = FileGdbTableFile.open(dataset.tableFile(), metadata);
   }
 
   public Dataset dataset() {
@@ -40,6 +51,21 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
     return tableFile.fields();
   }
 
+  /** Looks up a field by name, ignoring case as a fallback. */
+  public Optional<FileGdbField> field(String name) {
+    for (FileGdbField field : tableFile.fields()) {
+      if (field.name().equals(name)) {
+        return Optional.of(field);
+      }
+    }
+    for (FileGdbField field : tableFile.fields()) {
+      if (field.name().equalsIgnoreCase(name)) {
+        return Optional.of(field);
+      }
+    }
+    return Optional.empty();
+  }
+
   /** Returns the geometry field or {@code null} for plain tables. */
   public FileGdbGeomField geomField() {
     return tableFile.geomField();
@@ -51,6 +77,19 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
 
   public CrsDefinition crs() {
     return dataset.crs();
+  }
+
+  /** Domain assigned to a field, resolved through the catalog. */
+  public Optional<Domain> domain(String fieldName) {
+    for (FileGdbField field : tableFile.fields()) {
+      if (field.name().equals(fieldName) || field.name().equalsIgnoreCase(fieldName)) {
+        if (field.domain() == null || catalog == null) {
+          return Optional.empty();
+        }
+        return catalog.domain(field.domain());
+      }
+    }
+    return Optional.empty();
   }
 
   public long rowCount() {

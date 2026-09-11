@@ -1,8 +1,13 @@
 package ch.so.agi.filegdb.cli;
 
 import ch.so.agi.filegdb.FileGeodatabase;
+import ch.so.agi.filegdb.catalog.CodedValueDomain;
 import ch.so.agi.filegdb.catalog.CrsDefinition;
 import ch.so.agi.filegdb.catalog.Dataset;
+import ch.so.agi.filegdb.catalog.Domain;
+import ch.so.agi.filegdb.catalog.RangeDomain;
+import ch.so.agi.filegdb.catalog.RelationshipClass;
+import ch.so.agi.filegdb.catalog.RelationshipKey;
 import ch.so.agi.filegdb.geometry.FileGdbGeometry;
 import ch.so.agi.filegdb.geometry.GeometryKind;
 import ch.so.agi.filegdb.jts.JtsGeometryReader;
@@ -12,6 +17,7 @@ import ch.so.agi.filegdb.table.FileGdbTable;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.locationtech.jts.io.WKTWriter;
 
 /** Small command line front end for inspecting a file geodatabase. */
@@ -22,10 +28,14 @@ public final class FileGdbCli {
       Usage:
         filegdb4j info <database.gdb>
         filegdb4j dump <database.gdb> <layer> [--limit N]
+        filegdb4j domains <database.gdb>
+        filegdb4j relationships <database.gdb>
 
       Commands:
-        info   list datasets with geometry type, row count, CRS and field count
-        dump   print decoded rows, geometry as WKT
+        info           list datasets with geometry type, row count, CRS and field count
+        dump           print decoded rows, geometry as WKT
+        domains        list attribute domains with their values
+        relationships  list relationship classes
       """;
 
   private FileGdbCli() {}
@@ -48,6 +58,8 @@ public final class FileGdbCli {
     switch (args[0]) {
       case "info" -> info(database);
       case "dump" -> dump(database, args);
+      case "domains" -> domains(database);
+      case "relationships" -> relationships(database);
       default -> {
         System.err.print(USAGE);
         return 2;
@@ -61,6 +73,8 @@ public final class FileGdbCli {
       List<Dataset> datasets = gdb.datasets();
       System.out.println("File geodatabase: " + gdb.path());
       System.out.println("Datasets: " + datasets.size());
+      System.out.println(
+          "Domains: " + gdb.domains().size() + ", relationships: " + gdb.relationships().size());
       System.out.printf(
           "%-32s %-14s %-12s %8s %-8s %6s%n",
           "NAME", "KIND", "GEOMETRY", "ROWS", "CRS", "FIELDS");
@@ -80,6 +94,53 @@ public final class FileGdbCli {
         }
       }
     }
+  }
+
+  private static void domains(Path database) throws Exception {
+    try (FileGeodatabase gdb = FileGeodatabase.open(database)) {
+      System.out.printf("%-48s %-12s %s%n", "NAME", "TYPE", "VALUES");
+      for (Domain domain : gdb.domains()) {
+        String values = "";
+        if (domain instanceof CodedValueDomain coded) {
+          values =
+              coded.values().stream()
+                  .map(value -> value.code() + "=" + value.name())
+                  .collect(Collectors.joining(", "));
+        } else if (domain instanceof RangeDomain range) {
+          values = "[" + range.minValue() + ".." + range.maxValue() + "]";
+        }
+        System.out.printf("%-48s %-12s %s%n", domain.name(), domain.fieldType(), values);
+      }
+    }
+  }
+
+  private static void relationships(Path database) throws Exception {
+    try (FileGeodatabase gdb = FileGeodatabase.open(database)) {
+      for (RelationshipClass relationship : gdb.relationships()) {
+        System.out.printf(
+            "%s (%s): %s -> %s%n",
+            relationship.name(),
+            relationship.cardinality(),
+            relationship.originClassName(),
+            relationship.destinationClassName());
+        if (!relationship.forwardLabel().isBlank() || !relationship.backwardLabel().isBlank()) {
+          System.out.printf(
+              "  labels: %s / %s%n",
+              relationship.forwardLabel(), relationship.backwardLabel());
+        }
+        System.out.printf(
+            "  composite=%s attributed=%s attachment=%s%n",
+            relationship.composite(), relationship.attributed(), relationship.attachment());
+        System.out.printf("  origin keys: %s%n", keys(relationship.originKeys()));
+        System.out.printf("  destination keys: %s%n", keys(relationship.destinationKeys()));
+      }
+    }
+  }
+
+  private static String keys(List<RelationshipKey> keys) {
+    return keys.stream()
+        .map(key -> key.objectKeyName() + "(" + key.role() + ")")
+        .collect(Collectors.joining(", "));
   }
 
   private static void dump(Path database, String[] args) throws Exception {

@@ -24,10 +24,10 @@ Vector Reader/Writer; afterwards it can serve as the backend of `ili2ofgdb`.
 | Catalog (`a00000001`, `GDB_Items`), dataset/CRS metadata | done |
 | Tables: fields and rows (INT16/32/64, FLOAT32/64, STRING, XML, BINARY, GUID/GLOBALID, DATETIME, DATE, TIME, DATETIME_WITH_OFFSET, OBJECTID) | done |
 | Geometry read: Point, MultiPoint, Polyline, Polygon (XY, Z, M), ring organisation | done |
+| Domains (coded value, range) and field domain assignment | done |
+| Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | done |
 | Curved segments (arc, Bezier, ellipse) | planned |
 | MultiPatch | not supported |
-| Domains (coded value, range) | planned |
-| Relationship classes (1:1, 1:n, n:m, attributed) | planned |
 | Writer (new dataset, feature class, rows, catalogue) | planned |
 | Spatial index (`.spx`), free list, deletes/updates | planned |
 
@@ -81,6 +81,8 @@ CLI:
 ```bash
 ./gradlew :filegdb4j-cli:run --args="info test-data/gdal/npl_2546.gdb"
 ./gradlew :filegdb4j-cli:run --args="dump test-data/gdal/npl_2546.gdb grundnutzung --limit 5"
+./gradlew :filegdb4j-cli:run --args="domains test-data/gdal/Domains.gdb"
+./gradlew :filegdb4j-cli:run --args="relationships test-data/gdal/relationships.gdb"
 ```
 
 ## Verification with GDAL
@@ -112,7 +114,13 @@ cd gdal-3.13.3-ref && git sparse-checkout set ogr/ogrsf_frmts/openfilegdb
 
 ## Test data
 
-`test-data/gdal/npl_2546.gdb` is a GDAL/ili2db generated geodatabase of the
-Solothurn Nutzungsplanung reading (`SO_ARP_Nutzungsplanung_Publikation_20201005`),
-used as a realistic reference because it contains feature classes, plain
-tables, coded value domains, relations and DateTime fields.
+- `test-data/gdal/npl_2546.gdb` is a GDAL/ili2db generated geodatabase of the
+  Solothurn Nutzungsplanung reading
+  (`SO_ARP_Nutzungsplanung_Publikation_20201005`), used as a realistic reference
+  because it contains feature classes, plain tables, coded value domains and
+  several DateTime fields.
+- `test-data/gdal/Domains.gdb` and `test-data/gdal/relationships.gdb` are test
+  data from the GDAL repository
+  (`autotest/ogr/data/filegdb/`, MIT licensed) and cover coded value domains,
+  range domains and relationship classes for all cardinalities.
+- `test-data/gdal/curves.gdb` is reserved for the curved segment support.
