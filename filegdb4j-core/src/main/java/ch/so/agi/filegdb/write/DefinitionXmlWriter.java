@@ -162,8 +162,8 @@ final class DefinitionXmlWriter {
         .append(" xmlns:typens=\"http://www.esri.com/schemas/ArcGIS/10.1\">\n");
     element(xml, 1, "DomainName", domain.name());
     element(xml, 1, "FieldType", esriType(domain.fieldType()));
-    element(xml, 1, "MergePolicy", "esriMPTDefaultValue");
-    element(xml, 1, "SplitPolicy", "esriSPTDefaultValue");
+    element(xml, 1, "MergePolicy", domain.mergePolicy().xml());
+    element(xml, 1, "SplitPolicy", domain.splitPolicy().xml());
     element(xml, 1, "Description", domain.description());
     element(xml, 1, "Owner", "");
     if (domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain codedDomain) {
@@ -180,8 +180,20 @@ final class DefinitionXmlWriter {
       }
       xml.append("  </CodedValues>\n");
     } else if (domain instanceof ch.so.agi.filegdb.catalog.RangeDomain rangeDomain) {
-      element(xml, 1, "MinValue", rangeDomain.minValue());
-      element(xml, 1, "MaxValue", rangeDomain.maxValue());
+      for (var entry :
+          java.util.List.of(
+              java.util.Map.entry("MinValue", rangeDomain.minValue()),
+              java.util.Map.entry("MaxValue", rangeDomain.maxValue()))) {
+        xml.append("  <")
+            .append(entry.getKey())
+            .append(" xsi:type=\"")
+            .append(codeType(domain.fieldType()))
+            .append("\">")
+            .append(escape(entry.getValue()))
+            .append("</")
+            .append(entry.getKey())
+            .append(">\n");
+      }
     }
     xml.append("</").append(coded ? "GPCodedValueDomain2" : "GPRangeDomain2").append('>');
     return xml.toString();
@@ -302,7 +314,9 @@ final class DefinitionXmlWriter {
       case INT64 -> "xs:long";
       case FLOAT32 -> "xs:float";
       case FLOAT64 -> "xs:double";
-      case DATETIME, DATE, TIME, DATETIME_WITH_OFFSET -> "xs:dateTime";
+      case DATETIME, DATETIME_WITH_OFFSET -> "xs:dateTime";
+      case DATE -> "xs:date";
+      case TIME -> "xs:time";
       default -> "xs:string";
     };
   }

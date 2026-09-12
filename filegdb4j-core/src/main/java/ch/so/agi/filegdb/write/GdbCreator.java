@@ -18,9 +18,9 @@ import java.util.Set;
 /**
  * Creates a new file geodatabase with its system tables.
  *
- * <p>Ported from GDAL OpenFileGDB ({@code ogropenfilegdbdatasource_write.cpp}).
- * The system catalog, GDB_Items, GDB_ItemTypes, GDB_ItemRelationships and
- * GDB_ItemRelationshipTypes tables are written like the FileGDB SDK does.
+ * <p>Ported from GDAL OpenFileGDB ({@code ogropenfilegdbdatasource_write.cpp}). The system catalog,
+ * GDB_Items, GDB_ItemTypes, GDB_ItemRelationships and GDB_ItemRelationshipTypes tables are written
+ * like the FileGDB SDK does.
  */
 public final class GdbCreator implements AutoCloseable {
 
@@ -33,7 +33,8 @@ public final class GdbCreator implements AutoCloseable {
   private static final String RANGE_DOMAIN_TYPE_UUID = "{c29da988-8c3e-45f7-8b5c-18e51ee7beb4}";
   private static final String DATASET_IN_FOLDER_UUID = "{dc78f1ab-34e4-43ac-ba47-1c4eabd0e7c7}";
   private static final String DOMAIN_IN_DATASET_UUID = "{17e08adb-2b31-4dcd-8fdd-df529e88f843}";
-  private static final String DATASETS_RELATED_THROUGH_UUID = "{725badab-3452-491b-a795-55f32d67229c}";
+  private static final String DATASETS_RELATED_THROUGH_UUID =
+      "{725badab-3452-491b-a795-55f32d67229c}";
 
   private static final String WGS84_WKT =
       "GEOGCS[\"GCS_WGS_1984\",DATUM[\"D_WGS_1984\",SPHEROID[\"WGS_1984\",6378137.0,"
@@ -70,7 +71,74 @@ public final class GdbCreator implements AutoCloseable {
   private final String workspaceGuid;
   private final Set<String> spatialRefTexts = new HashSet<>();
   private final java.util.Map<String, String> datasetUuids = new java.util.HashMap<>();
+  private final java.util.Map<String, ch.so.agi.filegdb.catalog.Domain> domains =
+      new java.util.HashMap<>();
+  private final java.util.Map<String, String> domainUuids = new java.util.HashMap<>();
+  private final java.util.Map<String, List<FileGdbField>> datasetFields = new java.util.HashMap<>();
+  private final Set<String> names = new HashSet<>();
   private int nextTableNumber;
+
+  private void checkName(String name) {
+    if (name == null
+        || !name.matches("[\\p{L}_][\\p{L}\\p{N}_]*")
+        || name.length() > 160
+        || name.toUpperCase(Locale.ROOT).startsWith("GDB_"))
+      throw new IllegalArgumentException("Invalid catalog name: " + name);
+    if (names.contains(name.toLowerCase(Locale.ROOT)))
+      throw new IllegalArgumentException("Duplicate catalog name: " + name);
+  }
+
+  private void checkFields(List<FileGdbField> fields, String geometryName) {
+    Set<String> used = new HashSet<>();
+    used.add("objectid");
+    if (geometryName != null) {
+      if (!geometryName.matches("[\\p{L}_][\\p{L}\\p{N}_]*")
+          || geometryName.length() > 64
+          || !used.add(geometryName.toLowerCase(Locale.ROOT)))
+        throw new IllegalArgumentException("Invalid geometry field: " + geometryName);
+    }
+    for (var field : fields) {
+      if (field.name() == null
+          || !field.name().matches("[\\p{L}_][\\p{L}\\p{N}_]*")
+          || field.name().length() > 64
+          || !used.add(field.name().toLowerCase(Locale.ROOT)))
+        throw new IllegalArgumentException("Invalid or duplicate field: " + field.name());
+      if (field.domain() != null) {
+        var domain = domains.get(field.domain());
+        if (domain == null || domain.fieldType() != field.type())
+          throw new IllegalArgumentException(
+              "Unknown or incompatible domain on field: " + field.name());
+      }
+    }
+  }
+
+  private void registerDataset(String name, String uuid, List<FileGdbField> fields)
+      throws IOException {
+    names.add(name.toLowerCase(Locale.ROOT));
+    datasetFields.put(name, List.copyOf(fields));
+    for (String domain :
+        fields.stream()
+            .map(FileGdbField::domain)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList())
+      itemRelationships.writeRow(
+          new Object[] {
+            Uuids.generate(), uuid, domainUuids.get(domain), DOMAIN_IN_DATASET_UUID, null, null
+          },
+          null);
+  }
+
+  private ch.so.agi.filegdb.table.FileGdbFieldType keyType(String dataset, String name) {
+    if ("OBJECTID".equals(name)) return ch.so.agi.filegdb.table.FileGdbFieldType.INT32;
+    return datasetFields.get(dataset).stream()
+        .filter(f -> f.name().equals(name))
+        .findFirst()
+        .orElseThrow(
+            () -> new IllegalArgumentException("Unknown relationship key: " + dataset + "." + name))
+        .type();
+  }
+
   private boolean closed;
 
   private GdbCreator(Path directory) throws IOException {
@@ -121,13 +189,15 @@ public final class GdbCreator implements AutoCloseable {
   /**
    * Creates a feature class table and registers it in the catalog.
    *
-   * <p>The returned writer owns the physical table and must be closed before
-   * the database itself is closed.
+   * <p>The returned writer owns the physical table and must be closed before the database itself is
+   * closed.
    */
   public GdbFeatureWriter createFeatureClass(FeatureClassDefinition definition) throws IOException {
     if (closed) {
       throw new IllegalStateException("File geodatabase is already closed");
     }
+    checkName(definition.name());
+    checkFields(definition.fields(), definition.geometry().name());
     GeometryFieldDefinition geometry = definition.geometry();
     Path tableFile = directory.resolve(GdbPaths.tableFileName(nextTableNumber));
     TableFileWriter table =
@@ -148,9 +218,7 @@ public final class GdbCreator implements AutoCloseable {
 
       systemCatalog.writeRow(new Object[] {definition.name(), 0L}, null);
       itemRelationships.writeRow(
-          new Object[] {
-            Uuids.generate(), rootGuid, layerGuid, DATASET_IN_FOLDER_UUID, null, null
-          },
+          new Object[] {Uuids.generate(), rootGuid, layerGuid, DATASET_IN_FOLDER_UUID, null, null},
           null);
 
       String xml = DefinitionXmlWriter.featureClass(definition, (int) items.totalRecordCount() + 1);
@@ -177,6 +245,7 @@ public final class GdbCreator implements AutoCloseable {
 
       nextTableNumber++;
       datasetUuids.put(definition.name(), layerGuid);
+      registerDataset(definition.name(), layerGuid, definition.fields());
       return new GdbFeatureWriter(definition.name(), table);
     } catch (Exception e) {
       table.close();
@@ -189,6 +258,8 @@ public final class GdbCreator implements AutoCloseable {
     if (closed) {
       throw new IllegalStateException("File geodatabase is already closed");
     }
+    checkName(domain.name());
+    ch.so.agi.filegdb.catalog.DomainValues.validate(domain);
     boolean coded = domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain;
     String typeUuid = coded ? CODED_DOMAIN_TYPE_UUID : RANGE_DOMAIN_TYPE_UUID;
     String definitionXml = DefinitionXmlWriter.domain(domain);
@@ -212,8 +283,9 @@ public final class GdbCreator implements AutoCloseable {
           null
         },
         null);
-    itemRelationships.writeRow(
-        new Object[] {Uuids.generate(), rootGuid, uuid, DOMAIN_IN_DATASET_UUID, null, null}, null);
+    domains.put(domain.name(), domain);
+    domainUuids.put(domain.name(), uuid);
+    names.add(domain.name().toLowerCase(Locale.ROOT));
   }
 
   /** Creates a relationship class item in the catalog. */
@@ -221,6 +293,7 @@ public final class GdbCreator implements AutoCloseable {
     if (closed) {
       throw new IllegalStateException("File geodatabase is already closed");
     }
+    checkName(definition.name());
     String originUuid = datasetUuids.get(definition.originClassName());
     String destinationUuid = datasetUuids.get(definition.destinationClassName());
     if (originUuid == null || destinationUuid == null) {
@@ -231,14 +304,36 @@ public final class GdbCreator implements AutoCloseable {
               + definition.destinationClassName());
     }
 
+    if (definition.cardinality() == null
+        || definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.UNKNOWN)
+      throw new IllegalArgumentException("Known relationship cardinality required");
+    var originType = keyType(definition.originClassName(), definition.originPrimaryKey());
+    if (!java.util.Set.of(
+            ch.so.agi.filegdb.table.FileGdbFieldType.INT16,
+            ch.so.agi.filegdb.table.FileGdbFieldType.INT32,
+            ch.so.agi.filegdb.table.FileGdbFieldType.INT64,
+            ch.so.agi.filegdb.table.FileGdbFieldType.STRING,
+            ch.so.agi.filegdb.table.FileGdbFieldType.GUID,
+            ch.so.agi.filegdb.table.FileGdbFieldType.GLOBALID)
+        .contains(originType))
+      throw new IllegalArgumentException("Unsupported relationship key type: " + originType);
+    if (definition.cardinality()
+        != ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
+      var targetType = keyType(definition.destinationClassName(), definition.originForeignKey());
+      boolean guids =
+          (originType == ch.so.agi.filegdb.table.FileGdbFieldType.GLOBALID
+              && targetType == ch.so.agi.filegdb.table.FileGdbFieldType.GUID);
+      if (originType != targetType && !guids)
+        throw new IllegalArgumentException("Incompatible relationship key types");
+    }
     String mappingTableOidName = "";
-    if (definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
+    if (definition.cardinality()
+        == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
       mappingTableOidName = "OBJECTID";
       createTable(
               TableDefinition.builder(definition.name())
                   .field(FileGdbField.string(definition.originForeignKey(), 255).asNullable())
-                  .field(
-                      FileGdbField.string(definition.destinationForeignKey(), 255).asNullable())
+                  .field(FileGdbField.string(definition.destinationForeignKey(), 255).asNullable())
                   .build())
           .close();
     }
@@ -273,9 +368,17 @@ public final class GdbCreator implements AutoCloseable {
           null
         },
         null);
+    names.add(definition.name().toLowerCase(Locale.ROOT));
+    itemRelationships.writeRow(
+        new Object[] {Uuids.generate(), rootGuid, uuid, DATASET_IN_FOLDER_UUID, null, 1L}, null);
     itemRelationships.writeRow(
         new Object[] {
-          Uuids.generate(), originUuid, destinationUuid, DATASETS_RELATED_THROUGH_UUID, null, null
+          Uuids.generate(), originUuid, uuid, DATASETS_RELATED_THROUGH_UUID, null, null
+        },
+        null);
+    itemRelationships.writeRow(
+        new Object[] {
+          Uuids.generate(), destinationUuid, uuid, DATASETS_RELATED_THROUGH_UUID, null, null
         },
         null);
   }
@@ -286,6 +389,8 @@ public final class GdbCreator implements AutoCloseable {
       throw new IllegalStateException("File geodatabase is already closed");
     }
     String name = definition.name();
+    checkName(name);
+    checkFields(definition.fields(), null);
     Path tableFile = directory.resolve(GdbPaths.tableFileName(nextTableNumber));
     TableFileWriter table = TableFileWriter.create(tableFile, GeometryKind.NONE, false, false);
     try {
@@ -298,7 +403,8 @@ public final class GdbCreator implements AutoCloseable {
       itemRelationships.writeRow(
           new Object[] {Uuids.generate(), rootGuid, uuid, DATASET_IN_FOLDER_UUID, null, null},
           null);
-      String xml = DefinitionXmlWriter.table(name, definition.fields(), (int) items.totalRecordCount() + 1);
+      String xml =
+          DefinitionXmlWriter.table(name, definition.fields(), (int) items.totalRecordCount() + 1);
       items.writeRow(
           new Object[] {
             uuid,
@@ -320,6 +426,7 @@ public final class GdbCreator implements AutoCloseable {
           null);
       nextTableNumber++;
       datasetUuids.put(name, uuid);
+      registerDataset(name, uuid, definition.fields());
       return new GdbTableWriter(name, table);
     } catch (Exception e) {
       table.close();
@@ -481,18 +588,30 @@ public final class GdbCreator implements AutoCloseable {
       table.addField(FileGdbField.binary("Defaults").asNullable());
       GeometryFieldDefinition shapeDefinition =
           GeometryFieldDefinition.of("Shape", GeometryKind.POLYGON).withWkt(WGS84_WKT);
-      table.addGeometryField(
-          new FileGdbGeomField("Shape", "", true, WGS84_WKT, shapeDefinition));
+      table.addGeometryField(new FileGdbGeomField("Shape", "", true, WGS84_WKT, shapeDefinition));
       table.writeFieldDescriptors();
 
       CoordinatePrecision wgs84Precision =
-          new CoordinatePrecision(-180, -90, 1000000, 0.000002, -100000, 10000, 0.001, -100000,
-              10000, 0.001);
+          new CoordinatePrecision(
+              -180, -90, 1000000, 0.000002, -100000, 10000, 0.001, -100000, 10000, 0.001);
       addSpatialRef(WGS84_WKT, wgs84Precision);
 
       table.writeRow(
           new Object[] {
-            rootGuid, FOLDER_TYPE_UUID, "", "", "\\", null, null, "", "", "", null, null, null, 1L,
+            rootGuid,
+            FOLDER_TYPE_UUID,
+            "",
+            "",
+            "\\",
+            null,
+            null,
+            "",
+            "",
+            "",
+            null,
+            null,
+            null,
+            1L,
             null
           },
           null);
@@ -575,9 +694,7 @@ public final class GdbCreator implements AutoCloseable {
       table.writeFieldDescriptors();
       for (String[] row : ITEM_RELATIONSHIP_TYPES_ROWS) {
         table.writeRow(
-            new Object[] {
-              row[0], row[1], row[2], row[3], row[4], row[5], Long.parseLong(row[6])
-            },
+            new Object[] {row[0], row[1], row[2], row[3], row[4], row[5], Long.parseLong(row[6])},
             null);
       }
       return table;
@@ -607,19 +724,16 @@ public final class GdbCreator implements AutoCloseable {
     {"GEOMETRY_OUTOFLINE", "GEOMETRY_STORAGE", "OutOfLine"},
     {"BLOB_OUTOFLINE", "UI_TEXT", "The Outofline Blob configuration."},
     {"BLOB_OUTOFLINE", "BLOB_STORAGE", "OutOfLine"},
-    {"GEOMETRY_AND_BLOB_OUTOFLINE", "UI_TEXT",
-        "The Outofline Geometry and Blob configuration."},
+    {"GEOMETRY_AND_BLOB_OUTOFLINE", "UI_TEXT", "The Outofline Geometry and Blob configuration."},
     {"GEOMETRY_AND_BLOB_OUTOFLINE", "GEOMETRY_STORAGE", "OutOfLine"},
     {"GEOMETRY_AND_BLOB_OUTOFLINE", "BLOB_STORAGE", "OutOfLine"},
     {"TERRAIN_DEFAULTS", "UI_TERRAIN_TEXT", "The terrains default configuration."},
     {"TERRAIN_DEFAULTS", "GEOMETRY_STORAGE", "OutOfLine"},
     {"TERRAIN_DEFAULTS", "BLOB_STORAGE", "OutOfLine"},
-    {"MOSAICDATASET_DEFAULTS", "UI_MOSAIC_TEXT",
-        "The Outofline Raster and Blob configuration."},
+    {"MOSAICDATASET_DEFAULTS", "UI_MOSAIC_TEXT", "The Outofline Raster and Blob configuration."},
     {"MOSAICDATASET_DEFAULTS", "RASTER_STORAGE", "OutOfLine"},
     {"MOSAICDATASET_DEFAULTS", "BLOB_STORAGE", "OutOfLine"},
-    {"MOSAICDATASET_INLINE", "UI_MOSAIC_TEXT",
-        "The mosaic dataset inline configuration."},
+    {"MOSAICDATASET_INLINE", "UI_MOSAIC_TEXT", "The mosaic dataset inline configuration."},
     {"MOSAICDATASET_INLINE", "CHARACTER_FORMAT", "UTF8"},
     {"MOSAICDATASET_INLINE", "GEOMETRY_FORMAT", "Compressed"},
     {"MOSAICDATASET_INLINE", "GEOMETRY_STORAGE", "InLine"},
@@ -631,84 +745,258 @@ public final class GdbCreator implements AutoCloseable {
   private static final String[][] ITEM_TYPES_ROWS = {
     {"{8405add5-8df8-4227-8fac-3fcade073386}", "{00000000-0000-0000-0000-000000000000}", "Item"},
     {FOLDER_TYPE_UUID, "{8405add5-8df8-4227-8fac-3fcade073386}", "Folder"},
-    {"{ffd09c28-fe70-4e25-907c-af8e8a5ec5f3}", "{8405add5-8df8-4227-8fac-3fcade073386}", "Resource"},
+    {
+      "{ffd09c28-fe70-4e25-907c-af8e8a5ec5f3}", "{8405add5-8df8-4227-8fac-3fcade073386}", "Resource"
+    },
     {"{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "{ffd09c28-fe70-4e25-907c-af8e8a5ec5f3}", "Dataset"},
     {"{fbdd7dd6-4a25-40b7-9a1a-ecc3d1172447}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Tin"},
-    {"{d4912162-3413-476e-9da4-2aefbbc16939}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "AbstractTable"},
+    {
+      "{d4912162-3413-476e-9da4-2aefbbc16939}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "AbstractTable"
+    },
     {RELATIONSHIP_TYPE_UUID, "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Relationship Class"},
-    {"{74737149-DCB5-4257-8904-B9724E32A530}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Feature Dataset"},
-    {"{73718a66-afb9-4b88-a551-cffa0ae12620}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Geometric Network"},
-    {"{767152d3-ed66-4325-8774-420d46674e07}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Topology"},
-    {"{e6302665-416b-44fa-be33-4e15916ba101}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Survey Dataset"},
-    {"{d5a40288-029e-4766-8c81-de3f61129371}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Schematic Dataset"},
+    {
+      "{74737149-DCB5-4257-8904-B9724E32A530}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Feature Dataset"
+    },
+    {
+      "{73718a66-afb9-4b88-a551-cffa0ae12620}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Geometric Network"
+    },
+    {
+      "{767152d3-ed66-4325-8774-420d46674e07}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Topology"
+    },
+    {
+      "{e6302665-416b-44fa-be33-4e15916ba101}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Survey Dataset"
+    },
+    {
+      "{d5a40288-029e-4766-8c81-de3f61129371}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Schematic Dataset"
+    },
     {"{db1b697a-3bb6-426a-98a2-6ee7a4c6aed3}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Toolbox"},
     {WORKSPACE_TYPE_UUID, "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Workspace"},
-    {"{dc9ef677-1aa3-45a7-8acd-303a5202d0dc}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Workspace Extension"},
-    {"{77292603-930f-475d-ae4f-b8970f42f394}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Extension Dataset"},
+    {
+      "{dc9ef677-1aa3-45a7-8acd-303a5202d0dc}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Workspace Extension"
+    },
+    {
+      "{77292603-930f-475d-ae4f-b8970f42f394}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Extension Dataset"
+    },
     {"{8637f1ed-8c04-4866-a44a-1cb8288b3c63}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Domain"},
     {"{4ed4a58e-621f-4043-95ed-850fba45fcbc}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Replica"},
-    {"{d98421eb-d582-4713-9484-43304d0810f6}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Replica Dataset"},
-    {"{dc64b6e4-dc0f-43bd-b4f5-f22385dcf055}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "Historical Marker"},
+    {
+      "{d98421eb-d582-4713-9484-43304d0810f6}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Replica Dataset"
+    },
+    {
+      "{dc64b6e4-dc0f-43bd-b4f5-f22385dcf055}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "Historical Marker"
+    },
     {"{cd06bc3b-789d-4c51-aafa-a467912b8965}", "{d4912162-3413-476e-9da4-2aefbbc16939}", "Table"},
     {FEATURE_CLASS_TYPE_UUID, "{d4912162-3413-476e-9da4-2aefbbc16939}", "Feature Class"},
-    {"{5ed667a3-9ca9-44a2-8029-d95bf23704b9}", "{d4912162-3413-476e-9da4-2aefbbc16939}", "Raster Dataset"},
-    {"{35b601f7-45ce-4aff-adb7-7702d3839b12}", "{d4912162-3413-476e-9da4-2aefbbc16939}", "Raster Catalog"},
-    {"{7771fc7d-a38b-4fd3-8225-639d17e9a131}", "{77292603-930f-475d-ae4f-b8970f42f394}", "Network Dataset"},
+    {
+      "{5ed667a3-9ca9-44a2-8029-d95bf23704b9}",
+      "{d4912162-3413-476e-9da4-2aefbbc16939}",
+      "Raster Dataset"
+    },
+    {
+      "{35b601f7-45ce-4aff-adb7-7702d3839b12}",
+      "{d4912162-3413-476e-9da4-2aefbbc16939}",
+      "Raster Catalog"
+    },
+    {
+      "{7771fc7d-a38b-4fd3-8225-639d17e9a131}",
+      "{77292603-930f-475d-ae4f-b8970f42f394}",
+      "Network Dataset"
+    },
     {"{76357537-3364-48af-a4be-783c7c28b5cb}", "{77292603-930f-475d-ae4f-b8970f42f394}", "Terrain"},
-    {"{a3803369-5fc2-4963-bae0-13effc09dd73}", "{77292603-930f-475d-ae4f-b8970f42f394}", "Parcel Fabric"},
-    {"{a300008d-0cea-4f6a-9dfa-46af829a3df2}", "{77292603-930f-475d-ae4f-b8970f42f394}", "Representation Class"},
-    {"{787bea35-4a86-494f-bb48-500b96145b58}", "{77292603-930f-475d-ae4f-b8970f42f394}", "Catalog Dataset"},
-    {"{f8413dcb-2248-4935-bfe9-315f397e5110}", "{77292603-930f-475d-ae4f-b8970f42f394}", "Mosaic Dataset"},
-    {"{c29da988-8c3e-45f7-8b5c-18e51ee7beb4}", "{8637f1ed-8c04-4866-a44a-1cb8288b3c63}", "Range Domain"},
-    {"{8c368b12-a12e-4c7e-9638-c9c64e69e98f}", "{8637f1ed-8c04-4866-a44a-1cb8288b3c63}", "Coded Value Domain"}
+    {
+      "{a3803369-5fc2-4963-bae0-13effc09dd73}",
+      "{77292603-930f-475d-ae4f-b8970f42f394}",
+      "Parcel Fabric"
+    },
+    {
+      "{a300008d-0cea-4f6a-9dfa-46af829a3df2}",
+      "{77292603-930f-475d-ae4f-b8970f42f394}",
+      "Representation Class"
+    },
+    {
+      "{787bea35-4a86-494f-bb48-500b96145b58}",
+      "{77292603-930f-475d-ae4f-b8970f42f394}",
+      "Catalog Dataset"
+    },
+    {
+      "{f8413dcb-2248-4935-bfe9-315f397e5110}",
+      "{77292603-930f-475d-ae4f-b8970f42f394}",
+      "Mosaic Dataset"
+    },
+    {
+      "{c29da988-8c3e-45f7-8b5c-18e51ee7beb4}",
+      "{8637f1ed-8c04-4866-a44a-1cb8288b3c63}",
+      "Range Domain"
+    },
+    {
+      "{8c368b12-a12e-4c7e-9638-c9c64e69e98f}",
+      "{8637f1ed-8c04-4866-a44a-1cb8288b3c63}",
+      "Coded Value Domain"
+    }
   };
 
   private static final String[][] ITEM_RELATIONSHIP_TYPES_ROWS = {
-    {"{0d10b3a7-2f64-45e6-b7ac-2fc27bf2133c}", FOLDER_TYPE_UUID, FOLDER_TYPE_UUID,
-        "FolderInFolder", "Parent Folder Of", "Child Folder Of", "1"},
-    {"{5dd0c1af-cb3d-4fea-8c51-cb3ba8d77cdb}", FOLDER_TYPE_UUID,
-        "{8405add5-8df8-4227-8fac-3fcade073386}", "ItemInFolder", "Contains Item",
-        "Contained In Folder", "1"},
-    {"{a1633a59-46ba-4448-8706-d8abe2b2b02e}", "{74737149-DCB5-4257-8904-B9724E32A530}",
-        "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "DatasetInFeatureDataset",
-        "Contains Dataset", "Contained In FeatureDataset", "1"},
-    {DATASET_IN_FOLDER_UUID, FOLDER_TYPE_UUID, "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
-        "DatasetInFolder", "Contains Dataset", "Contained in Dataset", "1"},
-    {"{17e08adb-2b31-4dcd-8fdd-df529e88f843}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
-        "{8637f1ed-8c04-4866-a44a-1cb8288b3c63}", "DomainInDataset", "Contains Domain",
-        "Contained in Dataset", "0"},
-    {"{725badab-3452-491b-a795-55f32d67229c}", "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
-        "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "DatasetsRelatedThrough", "Origin Of",
-        "Destination Of", "0"},
-    {"{d088b110-190b-4229-bdf7-89fddd14d1ea}", "{767152d3-ed66-4325-8774-420d46674e07}",
-        FEATURE_CLASS_TYPE_UUID, "FeatureClassInTopology", "Spatially Manages Feature Class",
-        "Participates In Topology", "0"},
-    {"{dc739a70-9b71-41e8-868c-008cf46f16d7}", "{73718a66-afb9-4b88-a551-cffa0ae12620}",
-        FEATURE_CLASS_TYPE_UUID, "FeatureClassInGeometricNetwork", "Spatially Manages Feature Class",
-        "Participates In Geometric Network", "0"},
-    {"{b32b8563-0b96-4d32-92c4-086423ae9962}", "{7771fc7d-a38b-4fd3-8225-639d17e9a131}",
-        FEATURE_CLASS_TYPE_UUID, "FeatureClassInNetworkDataset", "Spatially Manages Feature Class",
-        "Participates In Network Dataset", "0"},
-    {"{908a4670-1111-48c6-8269-134fdd3fe617}", "{7771fc7d-a38b-4fd3-8225-639d17e9a131}",
-        "{cd06bc3b-789d-4c51-aafa-a467912b8965}", "TableInNetworkDataset", "Manages Table",
-        "Participates In Network Dataset", "0"},
-    {"{55d2f4dc-cb17-4e32-a8c7-47591e8c71de}", "{76357537-3364-48af-a4be-783c7c28b5cb}",
-        FEATURE_CLASS_TYPE_UUID, "FeatureClassInTerrain", "Spatially Manages Feature Class",
-        "Participates In Terrain", "0"},
-    {"{583a5baa-3551-41ae-8aa8-1185719f3889}", "{a3803369-5fc2-4963-bae0-13effc09dd73}",
-        FEATURE_CLASS_TYPE_UUID, "FeatureClassInParcelFabric",
-        "Spatially Manages Feature Class", "Participates In Parcel Fabric", "0"},
-    {"{5f9085e0-788f-4354-ae3c-34c83a7ea784}", "{a3803369-5fc2-4963-bae0-13effc09dd73}",
-        "{cd06bc3b-789d-4c51-aafa-a467912b8965}", "TableInParcelFabric", "Manages Table",
-        "Participates In Parcel Fabric", "0"},
-    {"{e79b44e3-f833-4b12-90a1-364ec4ddc43e}", FEATURE_CLASS_TYPE_UUID,
-        "{a300008d-0cea-4f6a-9dfa-46af829a3df2}", "RepresentationOfFeatureClass",
-        "Feature Class Representation", "Represented Feature Class", "0"},
-    {"{8db31af1-df7c-4632-aa10-3cc44b0c6914}", "{4ed4a58e-621f-4043-95ed-850fba45fcbc}",
-        "{d98421eb-d582-4713-9484-43304d0810f6}", "ReplicaDatasetInReplica", "Replicated Dataset",
-        "Participates In Replica", "1"},
-    {"{d022de33-45bd-424c-88bf-5b1b6b957bd3}", "{d98421eb-d582-4713-9484-43304d0810f6}",
-        "{28da9e89-ff80-4d6d-8926-4ee2b161677d}", "DatasetOfReplicaDataset", "Replicated Dataset",
-        "Dataset of Replicated Dataset", "0"}
+    {
+      "{0d10b3a7-2f64-45e6-b7ac-2fc27bf2133c}",
+      FOLDER_TYPE_UUID,
+      FOLDER_TYPE_UUID,
+      "FolderInFolder",
+      "Parent Folder Of",
+      "Child Folder Of",
+      "1"
+    },
+    {
+      "{5dd0c1af-cb3d-4fea-8c51-cb3ba8d77cdb}",
+      FOLDER_TYPE_UUID,
+      "{8405add5-8df8-4227-8fac-3fcade073386}",
+      "ItemInFolder",
+      "Contains Item",
+      "Contained In Folder",
+      "1"
+    },
+    {
+      "{a1633a59-46ba-4448-8706-d8abe2b2b02e}",
+      "{74737149-DCB5-4257-8904-B9724E32A530}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "DatasetInFeatureDataset",
+      "Contains Dataset",
+      "Contained In FeatureDataset",
+      "1"
+    },
+    {
+      DATASET_IN_FOLDER_UUID,
+      FOLDER_TYPE_UUID,
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "DatasetInFolder",
+      "Contains Dataset",
+      "Contained in Dataset",
+      "1"
+    },
+    {
+      "{17e08adb-2b31-4dcd-8fdd-df529e88f843}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "{8637f1ed-8c04-4866-a44a-1cb8288b3c63}",
+      "DomainInDataset",
+      "Contains Domain",
+      "Contained in Dataset",
+      "0"
+    },
+    {
+      "{725badab-3452-491b-a795-55f32d67229c}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "DatasetsRelatedThrough",
+      "Origin Of",
+      "Destination Of",
+      "0"
+    },
+    {
+      "{d088b110-190b-4229-bdf7-89fddd14d1ea}",
+      "{767152d3-ed66-4325-8774-420d46674e07}",
+      FEATURE_CLASS_TYPE_UUID,
+      "FeatureClassInTopology",
+      "Spatially Manages Feature Class",
+      "Participates In Topology",
+      "0"
+    },
+    {
+      "{dc739a70-9b71-41e8-868c-008cf46f16d7}",
+      "{73718a66-afb9-4b88-a551-cffa0ae12620}",
+      FEATURE_CLASS_TYPE_UUID,
+      "FeatureClassInGeometricNetwork",
+      "Spatially Manages Feature Class",
+      "Participates In Geometric Network",
+      "0"
+    },
+    {
+      "{b32b8563-0b96-4d32-92c4-086423ae9962}",
+      "{7771fc7d-a38b-4fd3-8225-639d17e9a131}",
+      FEATURE_CLASS_TYPE_UUID,
+      "FeatureClassInNetworkDataset",
+      "Spatially Manages Feature Class",
+      "Participates In Network Dataset",
+      "0"
+    },
+    {
+      "{908a4670-1111-48c6-8269-134fdd3fe617}",
+      "{7771fc7d-a38b-4fd3-8225-639d17e9a131}",
+      "{cd06bc3b-789d-4c51-aafa-a467912b8965}",
+      "TableInNetworkDataset",
+      "Manages Table",
+      "Participates In Network Dataset",
+      "0"
+    },
+    {
+      "{55d2f4dc-cb17-4e32-a8c7-47591e8c71de}",
+      "{76357537-3364-48af-a4be-783c7c28b5cb}",
+      FEATURE_CLASS_TYPE_UUID,
+      "FeatureClassInTerrain",
+      "Spatially Manages Feature Class",
+      "Participates In Terrain",
+      "0"
+    },
+    {
+      "{583a5baa-3551-41ae-8aa8-1185719f3889}",
+      "{a3803369-5fc2-4963-bae0-13effc09dd73}",
+      FEATURE_CLASS_TYPE_UUID,
+      "FeatureClassInParcelFabric",
+      "Spatially Manages Feature Class",
+      "Participates In Parcel Fabric",
+      "0"
+    },
+    {
+      "{5f9085e0-788f-4354-ae3c-34c83a7ea784}",
+      "{a3803369-5fc2-4963-bae0-13effc09dd73}",
+      "{cd06bc3b-789d-4c51-aafa-a467912b8965}",
+      "TableInParcelFabric",
+      "Manages Table",
+      "Participates In Parcel Fabric",
+      "0"
+    },
+    {
+      "{e79b44e3-f833-4b12-90a1-364ec4ddc43e}",
+      FEATURE_CLASS_TYPE_UUID,
+      "{a300008d-0cea-4f6a-9dfa-46af829a3df2}",
+      "RepresentationOfFeatureClass",
+      "Feature Class Representation",
+      "Represented Feature Class",
+      "0"
+    },
+    {
+      "{8db31af1-df7c-4632-aa10-3cc44b0c6914}",
+      "{4ed4a58e-621f-4043-95ed-850fba45fcbc}",
+      "{d98421eb-d582-4713-9484-43304d0810f6}",
+      "ReplicaDatasetInReplica",
+      "Replicated Dataset",
+      "Participates In Replica",
+      "1"
+    },
+    {
+      "{d022de33-45bd-424c-88bf-5b1b6b957bd3}",
+      "{d98421eb-d582-4713-9484-43304d0810f6}",
+      "{28da9e89-ff80-4d6d-8926-4ee2b161677d}",
+      "DatasetOfReplicaDataset",
+      "Replicated Dataset",
+      "Dataset of Replicated Dataset",
+      "0"
+    }
   };
 }

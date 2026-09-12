@@ -30,7 +30,8 @@ afterwards the library can serve as the backend of `ili2ofgdb`.
 | Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | read |
 | Writer: new dataset, feature class, rows (attributes, Point/MultiPoint/Polyline/Polygon, XY/Z/M) | done |
 | Writer: plain attribute tables | done |
-| Writer: domains (coded/range) and relationship classes (1:1, 1:n, n:m with mapping table) | done |
+| Writer: coded/range domains, field assignments and simple 1:1 / 1:n relationship classes | GDAL cross-checked |
+| Writer: n:m mapping-table construction | experimental; no complete data export API |
 | Writer: native spatial index (`.spx`) | built at close by default |
 | Writer: attribute indexes, updates/deletes | not supported |
 | Bezier and ellipse segments | read; writing not supported |
@@ -236,3 +237,20 @@ Interop detail observed with GDAL 3.11.4: its WKT reconstruction of centre-defin
 arcs may insert synthetic intermediate points with M=0 and a repeated start Z. Stored endpoint
 ordinates remain present; the Hop adapter interpolates its reconstructed intermediate Z/M values.
 A GDAL-mediated measured-curve round-trip therefore needs separate validation.
+
+### Domain and relationship schema
+
+`Domain` exposes `splitPolicy()` and `mergePolicy()`. Existing constructors use
+`DEFAULT_VALUE` for both. Policies read from catalog XML are preserved. Create domains
+before the fields which reference them with `withDomain(name)`. The creator validates
+duplicate catalog names, field/domain types and relationship key references before
+writing those definitions. Both participating datasets must already exist in the
+same creation session. Ordinary field values are not checked for domain membership
+by the low-level writer; `DomainValues.contains()` is available to callers.
+
+Only a newly created database is writable. The library does not enforce unique keys,
+foreign-key existence or relationship cardinality on row data. GDAL cross-checks
+cover coded/range domains, field assignments and simple 1:1 / 1:n relationships;
+this does not claim testing with ArcGIS. Run with `GDAL_PREFIX=/path/to/gdal` to use
+its `bin/ogrinfo`. The canonical Ubuntu CI build installs GDAL so this verification
+runs before snapshot publication.

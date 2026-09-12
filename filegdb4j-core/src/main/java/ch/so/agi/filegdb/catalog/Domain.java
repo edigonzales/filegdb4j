@@ -17,6 +17,10 @@ public sealed interface Domain permits CodedValueDomain, RangeDomain {
 
   String description();
 
+  DomainSplitPolicy splitPolicy();
+
+  DomainMergePolicy mergePolicy();
+
   /** Coded values of a {@link CodedValueDomain}, empty for range domains. */
   default List<CodedValue> values() {
     return List.of();

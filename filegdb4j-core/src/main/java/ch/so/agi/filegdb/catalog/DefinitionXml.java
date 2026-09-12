@@ -16,10 +16,9 @@ import org.xml.sax.InputSource;
 /**
  * Tolerant reader for the XML definitions stored in {@code GDB_Items}.
  *
- * <p>The geodatabase stores spatial references, field metadata, domains and
- * relationship classes as XML documents. The parser matches element names
- * without namespace prefixes, mirroring the behaviour of GDAL's CPL XML
- * parser.
+ * <p>The geodatabase stores spatial references, field metadata, domains and relationship classes as
+ * XML documents. The parser matches element names without namespace prefixes, mirroring the
+ * behaviour of GDAL's CPL XML parser.
  */
 public final class DefinitionXml {
 
@@ -49,8 +48,8 @@ public final class DefinitionXml {
   }
 
   /**
-   * Field metadata from the {@code GPFieldInfoExs} section of a dataset
-   * definition, keyed by field name.
+   * Field metadata from the {@code GPFieldInfoExs} section of a dataset definition, keyed by field
+   * name.
    */
   public static Map<String, FieldMetadata> fieldInfo(String xml) {
     Element root = parse(xml);
@@ -69,7 +68,9 @@ public final class DefinitionXml {
       }
       String domain = childText(info, "DomainName");
       boolean highPrecision = "true".equalsIgnoreCase(trimmed(childText(info, "HighPrecision")));
-      result.put(name, new FieldMetadata(domain == null || domain.isBlank() ? null : domain, highPrecision));
+      result.put(
+          name,
+          new FieldMetadata(domain == null || domain.isBlank() ? null : domain, highPrecision));
     }
     return result;
   }
@@ -167,7 +168,13 @@ public final class DefinitionXml {
         values.add(new CodedValue(defaultString(valueName), defaultString(code)));
       }
     }
-    return new CodedValueDomain(name, fieldType, description, values);
+    return new CodedValueDomain(
+        name,
+        fieldType,
+        description,
+        values,
+        DomainSplitPolicy.fromXml(childText(domain, "SplitPolicy")),
+        DomainMergePolicy.fromXml(childText(domain, "MergePolicy")));
   }
 
   private static RangeDomain rangeDomain(Element domain) {
@@ -179,7 +186,9 @@ public final class DefinitionXml {
         fieldType,
         description,
         defaultString(childText(domain, "MinValue")),
-        defaultString(childText(domain, "MaxValue")));
+        defaultString(childText(domain, "MaxValue")),
+        DomainSplitPolicy.fromXml(childText(domain, "SplitPolicy")),
+        DomainMergePolicy.fromXml(childText(domain, "MergePolicy")));
   }
 
   private static List<RelationshipKey> keys(Element relationship, String containerName) {
