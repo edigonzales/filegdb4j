@@ -13,11 +13,8 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.CoordinateXYZM;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.LinearRing;
 import org.locationtech.jts.geom.LineString;
-import org.locationtech.jts.geom.MultiLineString;
-import org.locationtech.jts.geom.MultiPoint;
-import org.locationtech.jts.geom.MultiPolygon;
+import org.locationtech.jts.geom.LinearRing;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.PrecisionModel;
@@ -25,10 +22,9 @@ import org.locationtech.jts.geom.PrecisionModel;
 /**
  * Converts decoded file geodatabase geometries to JTS.
  *
- * <p>Esri stores exterior polygon rings clockwise and interior rings counter
- * clockwise. Rings are assigned by orientation; holes are attached to the
- * smallest containing exterior ring. Polygon rings with less than four points
- * are skipped, and unclosed rings are closed.
+ * <p>Esri stores exterior polygon rings clockwise and interior rings counter clockwise. Rings are
+ * assigned by orientation; holes are attached to the smallest containing exterior ring. Polygon
+ * rings with less than four points are skipped, and unclosed rings are closed.
  */
 public final class JtsGeometryReader {
 
@@ -137,8 +133,7 @@ public final class JtsGeometryReader {
     List<Polygon> polygons = new ArrayList<>(exteriors.size());
     for (int i = 0; i < exteriors.size(); i++) {
       polygons.add(
-          factory.createPolygon(
-              exteriors.get(i), assignedHoles.get(i).toArray(LinearRing[]::new)));
+          factory.createPolygon(exteriors.get(i), assignedHoles.get(i).toArray(LinearRing[]::new)));
     }
     if (polygons.size() == 1) {
       return polygons.get(0);
@@ -151,7 +146,8 @@ public final class JtsGeometryReader {
   }
 
   private Coordinate[] coordinates(FileGdbPart part, boolean close) {
-    List<FileGdbPoint> points = part.segments().isEmpty() ? part.points() : curveStroker.stroke(part);
+    List<FileGdbPoint> points =
+        part.segments().isEmpty() ? part.points() : curveStroker.stroke(part);
     if (points.isEmpty()) {
       return new Coordinate[0];
     }
@@ -163,7 +159,7 @@ public final class JtsGeometryReader {
     if (close && !coordinates[0].equals2D(coordinates[coordinates.length - 1])) {
       Coordinate[] closed = new Coordinate[coordinates.length + 1];
       System.arraycopy(coordinates, 0, closed, 0, coordinates.length);
-      closed[coordinates.length] = new Coordinate(coordinates[0]);
+      closed[coordinates.length] = coordinates[0].copy();
       coordinates = closed;
     }
     return coordinates;
@@ -171,11 +167,10 @@ public final class JtsGeometryReader {
 
   static Coordinate coordinate(FileGdbPoint point) {
     if (point.m() != null) {
+      if (point.z() == null)
+        return new org.locationtech.jts.geom.CoordinateXYM(point.x(), point.y(), point.m());
       return new CoordinateXYZM(
-          point.x(),
-          point.y(),
-          point.z() == null ? Double.NaN : point.z(),
-          point.m());
+          point.x(), point.y(), point.z() == null ? Double.NaN : point.z(), point.m());
     }
     if (point.z() != null) {
       return new Coordinate(point.x(), point.y(), point.z());
@@ -188,8 +183,7 @@ public final class JtsGeometryReader {
     double area = 0;
     Coordinate[] coordinates = ring.getCoordinates();
     for (int i = 0; i < coordinates.length - 1; i++) {
-      area +=
-          coordinates[i].x * coordinates[i + 1].y - coordinates[i + 1].x * coordinates[i].y;
+      area += coordinates[i].x * coordinates[i + 1].y - coordinates[i + 1].x * coordinates[i].y;
     }
     return area < 0;
   }

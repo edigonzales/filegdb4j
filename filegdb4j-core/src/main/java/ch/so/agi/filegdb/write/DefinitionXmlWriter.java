@@ -10,15 +10,16 @@ import java.util.Locale;
 /**
  * Builds the catalog XML definitions written to {@code GDB_Items}.
  *
- * <p>The layout mirrors the definitions GDAL writes, see
- * {@code ogropenfilegdblayer_write.cpp} ({@code RefreshXMLDefinitionInMemory},
- * {@code CreateXMLFieldDefinition}, {@code XMLSerializeGeomFieldBase}).
+ * <p>The layout mirrors the definitions GDAL writes, see {@code ogropenfilegdblayer_write.cpp}
+ * ({@code RefreshXMLDefinitionInMemory}, {@code CreateXMLFieldDefinition}, {@code
+ * XMLSerializeGeomFieldBase}).
  */
 final class DefinitionXmlWriter {
 
   private DefinitionXmlWriter() {}
 
-  static String featureClass(FeatureClassDefinition definition, int dsid) {    GeometryFieldDefinition geometry = definition.geometry();
+  static String featureClass(FeatureClassDefinition definition, int dsid) {
+    GeometryFieldDefinition geometry = definition.geometry();
     StringBuilder xml = new StringBuilder(2048);
     xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     xml.append("<DEFeatureClassInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
@@ -62,7 +63,7 @@ final class DefinitionXmlWriter {
     element(xml, 1, "ShapeFieldName", geometry.name());
     element(xml, 1, "HasM", geometry.hasM() ? "true" : "false");
     element(xml, 1, "HasZ", geometry.hasZ() ? "true" : "false");
-    element(xml, 1, "HasSpatialIndex", "false");
+    element(xml, 1, "HasSpatialIndex", Boolean.toString(definition.spatialIndex()));
     element(xml, 1, "AreaFieldName", "");
     element(xml, 1, "LengthFieldName", "");
     xml.append("  <Extent xsi:nil=\"true\"/>\n");
@@ -188,7 +189,8 @@ final class DefinitionXmlWriter {
 
   static String relationship(
       RelationshipDefinition definition, int dsid, String mappingTableOidName) {
-    boolean manyToMany = definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY;
+    boolean manyToMany =
+        definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY;
     StringBuilder xml = new StringBuilder(1536);
     xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     xml.append("<DERelationshipClassInfo xsi:type=\"typens:DERelationshipClassInfo\"");
@@ -310,9 +312,10 @@ final class DefinitionXmlWriter {
     boolean hasWkt = geometry.wkt() != null && !geometry.wkt().isBlank();
     String type;
     if (hasWkt) {
-      type = crs.effectiveWkid() > 0 && crs.effectiveWkid() < 2000
-          ? "typens:GeographicCoordinateSystem"
-          : "typens:ProjectedCoordinateSystem";
+      type =
+          crs.effectiveWkid() > 0 && crs.effectiveWkid() < 2000
+              ? "typens:GeographicCoordinateSystem"
+              : "typens:ProjectedCoordinateSystem";
     } else {
       type = "typens:UnknownCoordinateSystem";
     }

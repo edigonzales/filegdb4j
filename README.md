@@ -25,14 +25,15 @@ afterwards the library can serve as the backend of `ili2ofgdb`.
 | Tables: fields and rows (INT16/32/64, FLOAT32/64, STRING, XML, BINARY, GUID/GLOBALID, DATETIME, DATE, TIME, DATETIME_WITH_OFFSET, OBJECTID) | done |
 | Geometry read: Point, MultiPoint, Polyline, Polygon (XY, Z, M), ring organisation | done |
 | Geometry read: circular arcs (interior point and center), cubic Bezier, ellipse parameters | done (stroked for JTS) |
-| Writer: curved segments | planned |
+| Writer: circular arc segments, XY/XYZ/XYM/XYZM | done |
 | Domains (coded value, range) and field domain assignment | read |
 | Relationship classes (1:1, 1:n, n:m, composite, attributed, attachment) | read |
 | Writer: new dataset, feature class, rows (attributes, Point/MultiPoint/Polyline/Polygon, XY/Z/M) | done |
 | Writer: plain attribute tables | done |
 | Writer: domains (coded/range) and relationship classes (1:1, 1:n, n:m with mapping table) | done |
-| Writer: spatial index (`.spx`), attribute indexes, updates/deletes, plain tables API | planned |
-| Curved segments (arc, Bezier, ellipse) | read; writing planned |
+| Writer: native spatial index (`.spx`) | built at close by default |
+| Writer: attribute indexes, updates/deletes | not supported |
+| Bezier and ellipse segments | read; writing not supported |
 | MultiPatch | not supported |
 
 The Java reader is verified against `ogrinfo` from GDAL 3.13.3: all layer
@@ -157,3 +158,43 @@ cd gdal-3.13.3-ref && git sparse-checkout set ogr/ogrsf_frmts/openfilegdb
 - `test-data/gdal/curves.gdb` and `test-data/gdal/curve_circle_by_center.gdb`
   cover curved segments with interior point arcs, center based arcs and full
   circles.
+
+## XY precision, circular arcs and spatial queries
+
+`GeometryFieldDefinition.withPrecision(...)` exposes `CoordinatePrecision.withXY(resolution,
+tolerance, xOrigin, yOrigin)`. Resolution is the coordinate storage grid spacing; tolerance is
+metadata used by downstream geometry operations and does not itself round coordinates. Values are
+in CRS coordinate units. Resolution must be positive, tolerance at least twice the resolution,
+and coordinates must fit the nonnegative grid domain (at most 9e15 grid units). Invalid values
+fail before writing. Existing library defaults remain unchanged.
+
+`GeometryCodec` writes native circular segments, specified by an interior point or a centre and
+direction, including major arcs and full circles. Bounds include circular extrema. Polyline
+endpoints and direction are retained; only polygon rings are oriented for FileGDB. The core
+geometry model has no dependency on Hop. The Hop provider supplies the exact curve adapter;
+the plain JTS adapter continues to expose a linear geometry view. Declared Z/M dimensions require
+finite ordinates; missing values are rejected instead of silently becoming zero.
+
+`FeatureClassDefinition.builder(name).spatialIndex(false)` disables index creation. Otherwise
+closing the feature writer builds a native v1 `.spx` using sorted runs on disk and records the grid
+size in the table header. Indexing covers envelopes conservatively; GDAL can use the resulting
+index. The regression suite checks native-index filtering with GDAL 3.11.4 and its in-memory index
+disabled, and covers row-index boundaries through 8,193 rows. Close/finish must succeed before a
+dataset is used; an interrupted standalone write is not a committed database.
+
+`table.query(new Envelope(xmin, ymin, xmax, ymax))` returns inclusive **geometry-envelope**
+intersections in source coordinates. `QueryResult.indexUsed()` reports whether the index was used;
+`geometriesRead()` counts decoded geometries. The overload with `false` forces a scan. Native v1/v2
+candidate pages are supported, with separator pruning for single-grid trees. The high-level
+query uses indexes produced by this writer and foreign point-layer indexes; other foreign geometry-cell indexes require a scan to
+preserve envelope semantics (notably for filters inside polygon holes). Malformed compatible
+indexes cause an error. Bezier/ellipse envelope queries currently fail explicitly.
+
+Query results and candidate IDs are currently materialized. Index construction spills entry runs,
+with at most 64 merge inputs open at once; page descriptors still grow with dataset size. This is not yet a fully
+streaming large-dataset query API. Attribute indexes and updates/deletes remain outside this change.
+
+Interop detail observed with GDAL 3.11.4: its WKT reconstruction of centre-defined measured
+arcs may insert synthetic intermediate points with M=0 and a repeated start Z. Stored endpoint
+ordinates remain present; the Hop adapter interpolates its reconstructed intermediate Z/M values.
+A GDAL-mediated measured-curve round-trip therefore needs separate validation.

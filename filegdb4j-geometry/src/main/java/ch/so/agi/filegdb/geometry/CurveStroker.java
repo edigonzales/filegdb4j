@@ -7,10 +7,9 @@ import java.util.List;
 /**
  * Converts the curved connections of a {@link FileGdbPart} into polylines.
  *
- * <p>Circular arcs (interior point or center based) and cubic Bezier segments
- * are densified with a configurable number of steps. Ellipse segments are
- * densified along the ellipse parameter; the {@code minor} flag selects the
- * smaller sweep.
+ * <p>Circular arcs (interior point or center based) and cubic Bezier segments are densified with a
+ * configurable number of steps. Ellipse segments are densified along the ellipse parameter; the
+ * {@code minor} flag selects the smaller sweep.
  */
 public final class CurveStroker {
 
@@ -48,8 +47,7 @@ public final class CurveStroker {
       }
       if (next < segments.size() && segments.get(next).startPointIndex() == i) {
         FileGdbSegment segment = segments.get(next++);
-        for (FileGdbPoint intermediate :
-            intermediate(points.get(i), points.get(i + 1), segment)) {
+        for (FileGdbPoint intermediate : intermediate(points.get(i), points.get(i + 1), segment)) {
           result.add(intermediate);
         }
       }
@@ -81,21 +79,20 @@ public final class CurveStroker {
       // opposite, the center is their midpoint.
       center =
           new double[] {
-            (start.x() + arc.interiorX()) / 2, (start.y() + arc.interiorY()) / 2
+            arc.byCenter() ? arc.interiorX() : (start.x() + arc.interiorX()) / 2,
+            arc.byCenter() ? arc.interiorY() : (start.y() + arc.interiorY()) / 2
           };
-      double radius = distance(start.x(), start.y(), arc.interiorX(), arc.interiorY()) / 2;
+      double radius = distance(start.x(), start.y(), center[0], center[1]);
       startAngle = angle(center, start);
       List<FileGdbPoint> points = new ArrayList<>(steps - 1);
       for (int i = 1; i < steps; i++) {
-        double a = startAngle + 2 * Math.PI * i / steps;
+        double a =
+            startAngle
+                + (arc.byCenter() && !arc.counterClockwise() ? -1 : 1) * 2 * Math.PI * i / steps;
         double t = (double) i / steps;
         points.add(
             interpolate(
-                start,
-                end,
-                center[0] + radius * Math.cos(a),
-                center[1] + radius * Math.sin(a),
-                t));
+                start, end, center[0] + radius * Math.cos(a), center[1] + radius * Math.sin(a), t));
       }
       return points;
     }
@@ -129,14 +126,14 @@ public final class CurveStroker {
     for (int i = 1; i < steps; i++) {
       double t = (double) i / steps;
       double a = startAngle + sweep * t;
-      points.add(interpolate(start, end, center[0] + radius * Math.cos(a),
-          center[1] + radius * Math.sin(a), t));
+      points.add(
+          interpolate(
+              start, end, center[0] + radius * Math.cos(a), center[1] + radius * Math.sin(a), t));
     }
     return points;
   }
 
-  private List<FileGdbPoint> bezier(
-      FileGdbPoint start, FileGdbPoint end, BezierSegment bezier) {
+  private List<FileGdbPoint> bezier(FileGdbPoint start, FileGdbPoint end, BezierSegment bezier) {
     List<FileGdbPoint> points = new ArrayList<>(steps - 1);
     for (int i = 1; i < steps; i++) {
       double t = (double) i / steps;
@@ -156,8 +153,7 @@ public final class CurveStroker {
     return points;
   }
 
-  private List<FileGdbPoint> ellipse(
-      FileGdbPoint start, FileGdbPoint end, EllipseSegment ellipse) {
+  private List<FileGdbPoint> ellipse(FileGdbPoint start, FileGdbPoint end, EllipseSegment ellipse) {
     double semiMajor = ellipse.semiMajor();
     double semiMinor = semiMajor * ellipse.minorMajorRatio();
     if (semiMajor <= 0 || semiMinor <= 0) {
@@ -180,10 +176,8 @@ public final class CurveStroker {
       double a = startAngle + sweep * t;
       double localX = semiMajor * Math.cos(a);
       double localY = semiMinor * Math.sin(a);
-      double x =
-          ellipse.centerX() + localX * Math.cos(rotation) - localY * Math.sin(rotation);
-      double y =
-          ellipse.centerY() + localX * Math.sin(rotation) + localY * Math.cos(rotation);
+      double x = ellipse.centerX() + localX * Math.cos(rotation) - localY * Math.sin(rotation);
+      double y = ellipse.centerY() + localX * Math.sin(rotation) + localY * Math.cos(rotation);
       points.add(interpolate(start, end, x, y, t));
     }
     return points;
@@ -233,8 +227,7 @@ public final class CurveStroker {
   }
 
   /** Circle center through three points, or null if the points are collinear. */
-  private static double[] circumcenter(
-      FileGdbPoint a, double bx, double by, FileGdbPoint c) {
+  private static double[] circumcenter(FileGdbPoint a, double bx, double by, FileGdbPoint c) {
     double d = 2 * (a.x() * (by - c.y()) + bx * (c.y() - a.y()) + c.x() * (a.y() - by));
     if (Math.abs(d) < 1e-12) {
       return null;

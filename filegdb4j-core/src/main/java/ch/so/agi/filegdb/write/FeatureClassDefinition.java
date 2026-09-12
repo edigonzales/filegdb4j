@@ -17,15 +17,25 @@ import java.util.List;
  *     .build();
  * }</pre>
  *
- * <p>The object id field is created automatically; the attribute list must not
- * contain geometry or object id fields.
+ * <p>The object id field is created automatically; the attribute list must not contain geometry or
+ * object id fields.
  */
 public record FeatureClassDefinition(
     String name,
     String alias,
     List<FileGdbField> fields,
     GeometryFieldDefinition geometry,
-    CrsDefinition crs) {
+    CrsDefinition crs,
+    boolean spatialIndex) {
+
+  public FeatureClassDefinition(
+      String name,
+      String alias,
+      List<FileGdbField> fields,
+      GeometryFieldDefinition geometry,
+      CrsDefinition crs) {
+    this(name, alias, fields, geometry, crs, true);
+  }
 
   public FeatureClassDefinition {
     if (name == null || name.isBlank()) {
@@ -48,6 +58,7 @@ public record FeatureClassDefinition(
     private final List<FileGdbField> fields = new ArrayList<>();
     private GeometryFieldDefinition geometry;
     private CrsDefinition crs = CrsDefinition.UNKNOWN;
+    private boolean spatialIndex = true;
 
     private Builder(String name) {
       this.name = name;
@@ -73,11 +84,16 @@ public record FeatureClassDefinition(
       return this;
     }
 
+    public Builder spatialIndex(boolean enabled) {
+      this.spatialIndex = enabled;
+      return this;
+    }
+
     public FeatureClassDefinition build() {
       if (geometry == null) {
         throw new IllegalStateException("A geometry definition is required for a feature class");
       }
-      return new FeatureClassDefinition(name, alias, fields, geometry, crs);
+      return new FeatureClassDefinition(name, alias, fields, geometry, crs, spatialIndex);
     }
   }
 }

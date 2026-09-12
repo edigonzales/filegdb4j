@@ -6,20 +6,19 @@ import java.util.List;
 /**
  * Decodes Esri shape buffers as stored in file geodatabase geometry fields.
  *
- * <p>Ported from GDAL OpenFileGDB ({@code filegdbtable.cpp},
- * {@code FileGDBOGRGeometryConverterImpl::GetAsGeometry}). The shape type
- * constants match {@code ogrpgeogeometry.h}, which is the header the GDAL
- * driver compiles against. This codec intentionally has no JTS or Hop
- * dependency.
+ * <p>Ported from GDAL OpenFileGDB ({@code filegdbtable.cpp}, {@code
+ * FileGDBOGRGeometryConverterImpl::GetAsGeometry}). The shape type constants match {@code
+ * ogrpgeogeometry.h}, which is the header the GDAL driver compiles against. This codec
+ * intentionally has no JTS or Hop dependency.
  *
- * <p>Curved segments (arc, Bezier, ellipse) are not decoded yet and raise an
- * {@link IllegalArgumentException}. The fgdb table geometry type of a shape
+ * <p>Curved segments are decoded without linearization. The fgdb table geometry type of a shape
  * buffer is encoded in the upper bits of the leading varint.
  */
 public final class GeometryCodec {
 
   /** Shape types from {@code ogrpgeogeometry.h}. */
   private static final int SHPT_NULL = 0;
+
   private static final int SHPT_POINT = 1;
   private static final int SHPT_ARC = 3;
   private static final int SHPT_POLYGON = 5;
@@ -50,7 +49,8 @@ public final class GeometryCodec {
 
   private GeometryCodec() {}
 
-  public static FileGdbGeometry decode(byte[] buffer, GeometryFieldDefinition definition) {    if (buffer == null || buffer.length == 0) {
+  public static FileGdbGeometry decode(byte[] buffer, GeometryFieldDefinition definition) {
+    if (buffer == null || buffer.length == 0) {
       return null;
     }
     Cursor cursor = new Cursor(buffer);
@@ -101,8 +101,7 @@ public final class GeometryCodec {
         if (shapeType == SHPT_ARCM || shapeType == SHPT_ARCZM) {
           hasM = true;
         }
-        return new FileGdbPolyline(
-            readParts(cursor, definition, hasZ, hasM, hasCurves, false));
+        return new FileGdbPolyline(readParts(cursor, definition, hasZ, hasM, hasCurves, false));
 
       case SHPT_POLYGON:
       case SHPT_POLYGONM:
@@ -115,8 +114,7 @@ public final class GeometryCodec {
         if (shapeType == SHPT_POLYGONM || shapeType == SHPT_POLYGONZM) {
           hasM = true;
         }
-        return new FileGdbPolygon(
-            readParts(cursor, definition, hasZ, hasM, hasCurves, false));
+        return new FileGdbPolygon(readParts(cursor, definition, hasZ, hasM, hasCurves, false));
 
       case SHPT_MULTIPATCH:
       case SHPT_MULTIPATCHM:
@@ -124,7 +122,8 @@ public final class GeometryCodec {
         throw new IllegalArgumentException("Multipatch geometries are not supported yet");
 
       default:
-        throw new IllegalArgumentException("Unsupported file geodatabase geometry type: " + shapeType);
+        throw new IllegalArgumentException(
+            "Unsupported file geodatabase geometry type: " + shapeType);
     }
   }
 
@@ -197,10 +196,7 @@ public final class GeometryCodec {
         points.set(
             i,
             new FileGdbPoint(
-                p.x(),
-                p.y(),
-                p.z(),
-                dm.value / sanitizedMScale(definition) + mOrigin(definition)));
+                p.x(), p.y(), p.z(), dm.value / sanitizedMScale(definition) + mOrigin(definition)));
       }
     }
     return new FileGdbMultiPoint(points);
@@ -313,13 +309,11 @@ public final class GeometryCodec {
           double value2 = cursor.f64();
           long bits = cursor.u32();
           boolean interiorPoint = (bits & 0x80) != 0 && (bits & 0x20) == 0;
-          boolean centerPoint =
-              (bits & 0x1) == 0 && (bits & 0x20) == 0 && (bits & 0x40) == 0;
+          boolean centerPoint = (bits & 0x1) == 0 && (bits & 0x20) == 0 && (bits & 0x40) == 0;
           if (interiorPoint) {
             segment = new CircularArcSegment(startIndex, value1, value2, false, false);
           } else if (centerPoint) {
-            segment =
-                new CircularArcSegment(startIndex, value1, value2, true, (bits & 0x8) != 0);
+            segment = new CircularArcSegment(startIndex, value1, value2, true, (bits & 0x8) != 0);
           } else {
             segment = null;
           }
@@ -356,7 +350,8 @@ public final class GeometryCodec {
         continue;
       }
       int partIndex = partForIndex(starts, startIndex);
-      if (partIndex >= 0 && startIndex - starts[partIndex] < parts.get(partIndex).points().size() - 1) {
+      if (partIndex >= 0
+          && startIndex - starts[partIndex] < parts.get(partIndex).points().size() - 1) {
         perPart.get(partIndex).add(shift(segment, starts[partIndex]));
       }
     }
@@ -546,9 +541,8 @@ public final class GeometryCodec {
   /**
    * Encodes a geometry as an Esri shape buffer.
    *
-   * <p>The Z and M flags of the geometry field definition decide the shape
-   * type and the presence of the Z and M arrays, mirroring GDAL's
-   * {@code EncodeGeometry()}.
+   * <p>The Z and M flags of the geometry field definition decide the shape type and the presence of
+   * the Z and M arrays, mirroring GDAL's {@code EncodeGeometry()}.
    */
   public static byte[] encode(FileGdbGeometry geometry, GeometryFieldDefinition definition) {
     Buffer buffer = new Buffer();
@@ -564,15 +558,25 @@ public final class GeometryCodec {
         type = hasM ? SHPT_POINTM : SHPT_POINT;
       }
       buffer.u8(type);
-      buffer.varUInt64(encodeUnsigned(point.x(), precision.xOrigin(), precision.xyScale()));
-      buffer.varUInt64(encodeUnsigned(point.y(), precision.yOrigin(), precision.xyScale()));
+      buffer.varUInt64(
+          CoordinatePrecision.gridCoordinate(point.x(), precision.xOrigin(), precision.xyScale())
+              + 1);
+      buffer.varUInt64(
+          CoordinatePrecision.gridCoordinate(point.y(), precision.yOrigin(), precision.xyScale())
+              + 1);
       if (hasZ) {
         buffer.varUInt64(
-            encodeUnsigned(point.z(), precision.zOrigin(), sanitizeScale(precision.zScale())));
+            encodeUnsigned(
+                requiredOrdinate(point.z(), "Z"),
+                precision.zOrigin(),
+                sanitizeScale(precision.zScale())));
       }
       if (hasM) {
         buffer.varUInt64(
-            encodeUnsigned(point.m(), precision.mOrigin(), sanitizeScale(precision.mScale())));
+            encodeUnsigned(
+                requiredOrdinate(point.m(), "M"),
+                precision.mOrigin(),
+                sanitizeScale(precision.mScale())));
       }
       return buffer.toByteArray();
     }
@@ -596,22 +600,31 @@ public final class GeometryCodec {
     boolean polyline = geometry instanceof FileGdbPolyline;
     List<FileGdbPart> parts =
         polyline ? ((FileGdbPolyline) geometry).parts() : ((FileGdbPolygon) geometry).parts();
+    int curveCount = 0;
     for (FileGdbPart part : parts) {
-      if (!part.segments().isEmpty()) {
-        throw new UnsupportedOperationException(
-            "Writing curved file geodatabase segments is not supported yet");
+      java.util.Set<Integer> starts = new java.util.HashSet<>();
+      for (FileGdbSegment segment : part.segments()) {
+        if (!(segment instanceof CircularArcSegment))
+          throw new UnsupportedOperationException("Only circular arcs can be written");
+        int i = segment.startPointIndex();
+        if (i < 0 || i >= part.points().size() - 1 || !starts.add(i))
+          throw new IllegalArgumentException("Invalid curve segment index: " + i);
+        curveCount++;
       }
     }
     int type;
     if (polyline) {
       type = hasZ ? (hasM ? SHPT_ARCZM : SHPT_ARCZ) : (hasM ? SHPT_ARCM : SHPT_ARC);
     } else {
-      type =
-          hasZ
-              ? (hasM ? SHPT_POLYGONZM : SHPT_POLYGONZ)
-              : (hasM ? SHPT_POLYGONM : SHPT_POLYGON);
+      type = hasZ ? (hasM ? SHPT_POLYGONZM : SHPT_POLYGONZ) : (hasM ? SHPT_POLYGONM : SHPT_POLYGON);
     }
-    buffer.u8(type);
+    buffer.varUInt32(
+        curveCount == 0
+            ? type
+            : (polyline ? SHPT_GENERALPOLYLINE : SHPT_GENERALPOLYGON)
+                | EXT_SHAPE_CURVE_FLAG
+                | (hasZ ? EXT_SHAPE_Z_FLAG : 0)
+                | (hasM ? EXT_SHAPE_M_FLAG : 0));
 
     List<FileGdbPoint> points = new ArrayList<>();
     for (FileGdbPart part : parts) {
@@ -622,11 +635,47 @@ public final class GeometryCodec {
       return buffer.toByteArray();
     }
     buffer.varUInt32(parts.size());
-    writeEnvelope(buffer, points, precision);
+    if (curveCount > 0) buffer.varUInt32(curveCount);
+    // Bounds must describe the coordinates that will actually be stored.
+    List<FileGdbPart> storedParts = new ArrayList<>();
+    for (FileGdbPart part : parts)
+      storedParts.add(
+          new FileGdbPart(
+              part.points().stream()
+                  .map(
+                      p ->
+                          new FileGdbPoint(
+                              precision.quantizeX(p.x()), precision.quantizeY(p.y()), p.z(), p.m()))
+                  .toList(),
+              part.segments()));
+    Envelope bounds =
+        GeometryBounds.of(
+            polyline ? new FileGdbPolyline(storedParts) : new FileGdbPolygon(storedParts));
+    writeEnvelope(
+        buffer,
+        List.of(
+            new FileGdbPoint(bounds.xMin(), bounds.yMin()),
+            new FileGdbPoint(bounds.xMax(), bounds.yMax())),
+        precision);
     for (int i = 0; i < parts.size() - 1; i++) {
       buffer.varUInt32(parts.get(i).points().size());
     }
     writeDeltaArray(buffer, points, precision, hasZ, hasM);
+    int offset = 0;
+    for (FileGdbPart part : parts) {
+      for (FileGdbSegment segment :
+          part.segments().stream()
+              .sorted(java.util.Comparator.comparingInt(FileGdbSegment::startPointIndex))
+              .toList()) {
+        CircularArcSegment arc = (CircularArcSegment) segment;
+        buffer.varUInt32(offset + arc.startPointIndex());
+        buffer.u8(1);
+        buffer.f64(arc.interiorX());
+        buffer.f64(arc.interiorY());
+        buffer.u32(arc.byCenter() ? (arc.counterClockwise() ? 8 : 0) : 128);
+      }
+      offset += part.points().size();
+    }
     return buffer.toByteArray();
   }
 
@@ -657,8 +706,10 @@ public final class GeometryCodec {
     long lastX = 0;
     long lastY = 0;
     for (FileGdbPoint point : points) {
-      long x = Math.round((point.x() - precision.xOrigin()) * precision.xyScale());
-      long y = Math.round((point.y() - precision.yOrigin()) * precision.xyScale());
+      long x =
+          CoordinatePrecision.gridCoordinate(point.x(), precision.xOrigin(), precision.xyScale());
+      long y =
+          CoordinatePrecision.gridCoordinate(point.y(), precision.yOrigin(), precision.xyScale());
       buffer.varInt(x - lastX);
       buffer.varInt(y - lastY);
       lastX = x;
@@ -668,9 +719,7 @@ public final class GeometryCodec {
       double zScale = sanitizeScale(precision.zScale());
       long lastZ = 0;
       for (FileGdbPoint point : points) {
-        long z =
-            Math.round(
-                ((point.z() == null ? 0 : point.z()) - precision.zOrigin()) * zScale);
+        long z = Math.round((requiredOrdinate(point.z(), "Z") - precision.zOrigin()) * zScale);
         buffer.varInt(z - lastZ);
         lastZ = z;
       }
@@ -679,13 +728,18 @@ public final class GeometryCodec {
       double mScale = sanitizeScale(precision.mScale());
       long lastM = 0;
       for (FileGdbPoint point : points) {
-        long m =
-            Math.round(
-                ((point.m() == null ? 0 : point.m()) - precision.mOrigin()) * mScale);
+        long m = Math.round((requiredOrdinate(point.m(), "M") - precision.mOrigin()) * mScale);
         buffer.varInt(m - lastM);
         lastM = m;
       }
     }
+  }
+
+  private static double requiredOrdinate(Double value, String name) {
+    if (value == null || !Double.isFinite(value))
+      throw new IllegalArgumentException(
+          "Missing or non-finite " + name + " ordinate in dimensioned geometry");
+    return value;
   }
 
   private static long encodeUnsigned(double value, double origin, double scale) {
@@ -711,6 +765,15 @@ public final class GeometryCodec {
     void u8(int value) {
       ensure(1);
       data[size++] = (byte) value;
+    }
+
+    void u32(long value) {
+      for (int i = 0; i < 4; i++) u8((int) (value >>> (8 * i)));
+    }
+
+    void f64(double value) {
+      long bits = Double.doubleToLongBits(value);
+      for (int i = 0; i < 8; i++) u8((int) (bits >>> (8 * i)));
     }
 
     void varUInt32(long value) {

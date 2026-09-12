@@ -33,13 +33,12 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Creates and fills a {@code .gdbtable} file with its {@code .gdbtablx} row
- * index.
+ * Creates and fills a {@code .gdbtable} file with its {@code .gdbtablx} row index.
  *
- * <p>Ported from GDAL OpenFileGDB ({@code filegdbtable_write.cpp},
- * {@code filegdbtable_write_fields.cpp}). The writer supports sequential
- * object ids, no free list, no attribute or spatial indexes and no updates.
- * Fields must be added before the first row is written.
+ * <p>Ported from GDAL OpenFileGDB ({@code filegdbtable_write.cpp}, {@code
+ * filegdbtable_write_fields.cpp}). The writer supports sequential object ids, no free list, no
+ * attribute indexes and no updates. Optional native spatial indexes are built at close. Fields must
+ * be added before the first row is written.
  */
 public final class TableFileWriter implements AutoCloseable {
 
@@ -47,7 +46,7 @@ public final class TableFileWriter implements AutoCloseable {
   private static final int TABLX_HEADER_SIZE = 16;
   private static final int TABLX_FEATURES_PER_PAGE = 1024;
   private static final int TABLX_OFFSET_SIZE = 4;
-  private static final String CREATOR = "filegdb4j";
+  private static final String CREATOR = "filegdb4j-envelope-spx-1";
 
   private final Path path;
   private final FileChannel table;
@@ -56,7 +55,7 @@ public final class TableFileWriter implements AutoCloseable {
   private final boolean hasZ;
   private final boolean hasM;
   private final List<FileGdbField> attributeFields = new ArrayList<>();
-  private final Set<String> fieldNames = new HashSet<>();
+  private final Set<String> fieldNames = new HashSet<>(Set.of("objectid"));
   private List<FileGdbField> physicalFields;
   private FileGdbGeomField geometryField;
   private int geometryFieldIndex = -1;
@@ -64,6 +63,7 @@ public final class TableFileWriter implements AutoCloseable {
   private int nullMaskSize;
   private boolean fieldsWritten;
   private boolean closed;
+  private boolean spatialIndex;
 
   private long validRecordCount;
   private long totalRecordCount;
@@ -150,6 +150,21 @@ public final class TableFileWriter implements AutoCloseable {
     }
   }
 
+  public void setSpatialIndex(boolean enabled) {
+    if (fieldsWritten) throw new IllegalStateException("Index setting must precede fields");
+    if (enabled && geometryField == null)
+      throw new IllegalStateException("Spatial index requires geometry");
+    spatialIndex = enabled;
+    if (enabled)
+      geometryField =
+          new FileGdbGeomField(
+              geometryField.name(),
+              geometryField.alias(),
+              geometryField.nullable(),
+              geometryField.wkt(),
+              geometryField.geometry().withGridResolution(List.of(1.0)));
+  }
+
   public Path path() {
     return path;
   }
@@ -198,6 +213,7 @@ public final class TableFileWriter implements AutoCloseable {
     if (!fieldNames.add(field.name().toLowerCase(Locale.ROOT))) {
       throw new IllegalArgumentException("Duplicate field name: " + field.name());
     }
+    field.geometry().precision().validateForWriting();
     geometryField = field;
     if (field.nullable()) {
       nullableCount++;
@@ -212,15 +228,7 @@ public final class TableFileWriter implements AutoCloseable {
     physicalFields = new ArrayList<>(attributeFields.size() + 2);
     physicalFields.add(
         new FileGdbField(
-            "OBJECTID",
-            "",
-            FileGdbFieldType.OBJECTID,
-            false,
-            true,
-            false,
-            0,
-            false,
-            null));
+            "OBJECTID", "", FileGdbFieldType.OBJECTID, false, true, false, 0, false, null));
     physicalFields.addAll(attributeFields);
     if (geometryField != null) {
       geometryFieldIndex = physicalFields.size();
@@ -282,10 +290,8 @@ public final class TableFileWriter implements AutoCloseable {
   /**
    * Writes one feature.
    *
-   * @param attributeValues values aligned with the attribute fields added to
-   *     this writer
-   * @param geometry geometry for the geometry field, may be null when the
-   *     field is nullable
+   * @param attributeValues values aligned with the attribute fields added to this writer
+   * @param geometry geometry for the geometry field, may be null when the field is nullable
    */
   public long writeRow(Object[] attributeValues, FileGdbGeometry geometry) throws IOException {
     if (!fieldsWritten) {
@@ -297,6 +303,9 @@ public final class TableFileWriter implements AutoCloseable {
     }
     byte[] blob = encodeRow(attributeValues, geometry);
 
+    if (fileSize + blob.length + 4 > 0xffffffffL || totalRecordCount >= Integer.MAX_VALUE) {
+      throw new GdbException("Table exceeds supported 32-bit row index limits");
+    }
     long objectId = totalRecordCount + 1;
     long rowIndex = objectId - 1;
     if (rowIndex % TABLX_FEATURES_PER_PAGE == 0) {
@@ -322,7 +331,7 @@ public final class TableFileWriter implements AutoCloseable {
     validRecordCount++;
     rowBufferMaxSize = Math.max(rowBufferMaxSize, blob.length);
     headerBufferMaxSize = Math.max(headerBufferMaxSize, blob.length);
-    sync();
+    updateHeaders();
     return objectId;
   }
 
@@ -352,7 +361,13 @@ public final class TableFileWriter implements AutoCloseable {
         byte[] shape = GeometryCodec.encode(geometry, geometryField.geometry());
         buffer.varUInt(shape.length);
         buffer.bytes(shape);
-        updateExtent(geometry);
+        FileGdbGeometry stored = GeometryCodec.decode(shape, geometryField.geometry());
+        updateExtent(stored);
+        var bounds = ch.so.agi.filegdb.geometry.GeometryBounds.of(stored);
+        if (bounds != null) {
+          include(new FileGdbPoint(bounds.xMin(), bounds.yMin()));
+          include(new FileGdbPoint(bounds.xMax(), bounds.yMax()));
+        }
         if (field.nullable()) {
           clearBit(mask, nullableIndex);
           nullableIndex++;
@@ -402,8 +417,7 @@ public final class TableFileWriter implements AutoCloseable {
         buffer.bytes(bytes);
       }
       case GUID, GLOBALID -> buffer.bytes(uuidBytes(value));
-      case DATETIME ->
-          buffer.f64(dateTimeToDays(toLocalDateTime(value), field.highPrecision()));
+      case DATETIME -> buffer.f64(dateTimeToDays(toLocalDateTime(value), field.highPrecision()));
       case DATE -> buffer.f64(dateTimeToDays(toLocalDate(value).atStartOfDay(), false));
       case TIME -> {
         LocalTime time = toLocalTime(value);
@@ -649,6 +663,12 @@ public final class TableFileWriter implements AutoCloseable {
 
   /** Patches the header and the row index trailer. */
   public void sync() throws IOException {
+    updateHeaders();
+    table.force(false);
+    tableX.force(false);
+  }
+
+  private void updateHeaders() throws IOException {
     if (!fieldsWritten) {
       return;
     }
@@ -682,9 +702,9 @@ public final class TableFileWriter implements AutoCloseable {
     int neededBytes = (int) ((blocksPresent + 7) / 8);
     if (blockMap.length < neededBytes) {
       blockMap = new byte[neededBytes];
-      for (long block = 0; block < blocksPresent; block++) {
-        blockMap[(int) (block / 8)] |= (byte) (1 << (block % 8));
-      }
+    }
+    for (long block = 0; block < blocksPresent; block++) {
+      blockMap[(int) (block / 8)] |= (byte) (1 << (block % 8));
     }
 
     BinaryBuffer tableXHeader = new BinaryBuffer(12);
@@ -720,9 +740,6 @@ public final class TableFileWriter implements AutoCloseable {
     trailer.u32(paddedWords - trailingZeroWords);
     trailer.bytes(padded);
     writeFully(tableX, trailerOffset, trailer.toByteArray());
-
-    table.force(false);
-    tableX.force(false);
   }
 
   @Override
@@ -734,6 +751,13 @@ public final class TableFileWriter implements AutoCloseable {
     try {
       if (fieldsWritten) {
         sync();
+        if (spatialIndex) {
+          double grid = ch.so.agi.filegdb.index.SpatialIndex.build(path);
+          BinaryBuffer value = new BinaryBuffer(8);
+          value.f64(grid);
+          writeFully(table, gridResFileOffset, value.toByteArray());
+          table.force(false);
+        }
       }
     } finally {
       try {

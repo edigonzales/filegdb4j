@@ -140,6 +140,7 @@ public final class GdbCreator implements AutoCloseable {
           new FileGdbGeomField(
               geometry.name(), geometry.alias(), geometry.nullable(), geometry.wkt(), geometry);
       table.addGeometryField(geomField);
+      table.setSpatialIndex(definition.spatialIndex());
       table.writeFieldDescriptors();
 
       String layerGuid = Uuids.generate();

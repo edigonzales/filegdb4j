@@ -1,7 +1,6 @@
 package ch.so.agi.filegdb.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import ch.so.agi.filegdb.FileGeodatabase;
 import ch.so.agi.filegdb.catalog.CodedValue;
@@ -45,7 +44,10 @@ class GdbCreatorTest {
               List.of(new CodedValue("Main road", "main"), new CodedValue("Minor road", "minor"))));
       database.createDomain(
           new RangeDomain(
-              "lane_count", ch.so.agi.filegdb.table.FileGdbFieldType.INT32, "Lane count", "1",
+              "lane_count",
+              ch.so.agi.filegdb.table.FileGdbFieldType.INT32,
+              "Lane count",
+              "1",
               "8"));
 
       FeatureClassDefinition roads =
@@ -165,8 +167,7 @@ class GdbCreatorTest {
         assertThat(table.isFeatureClass()).isFalse();
         assertThat(table.rowCount()).isEqualTo(2);
         assertThat(table.read(1).get("title")).isEqualTo("Zonenreglement");
-        assertThat(table.read(1).get("published"))
-            .isEqualTo(LocalDateTime.of(2003, 7, 1, 0, 0));
+        assertThat(table.read(1).get("published")).isEqualTo(LocalDateTime.of(2003, 7, 1, 0, 0));
         assertThat(table.read(2).get("published")).isNull();
       }
     }
@@ -195,7 +196,7 @@ class GdbCreatorTest {
       Path geoJson = directory.resolve("roads.geojson");
       Ogr.run(ogr2Ogr, "-f", "GeoJSON", geoJson.toString(), databasePath.toString(), "roads");
       assertThat(geoJson).exists();
-      assertThat(new String(java.nio.file.Files.readAllBytes(geoJson)))
+      assertThat(new String(java.nio.file.Files.readAllBytes(geoJson)).replaceAll("\\s+", ""))
           .contains("\"name\":\"A1\"");
     }
   }

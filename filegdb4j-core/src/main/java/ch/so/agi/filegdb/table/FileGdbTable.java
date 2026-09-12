@@ -126,6 +126,81 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
     return new FileGdbRow(objectId, tableFile.fields(), values);
   }
 
+  public record QueryResult(List<FileGdbRow> rows, boolean indexUsed, long geometriesRead)
+      implements Iterable<FileGdbRow> {
+    public QueryResult {
+      rows = List.copyOf(rows);
+    }
+
+    public Iterator<FileGdbRow> iterator() {
+      return rows.iterator();
+    }
+  }
+
+  /**
+   * Inclusive geometry-envelope intersection. Foreign geometry-cell indexes cannot prove envelope
+   * intersection (e.g. a rectangle inside a polygon hole), so use a scan for those.
+   */
+  public QueryResult query(ch.so.agi.filegdb.geometry.Envelope filter) throws IOException {
+    return query(filter, true);
+  }
+
+  public QueryResult query(ch.so.agi.filegdb.geometry.Envelope filter, boolean useIndex)
+      throws IOException {
+    if (filter == null
+        || !Double.isFinite(filter.xMin())
+        || !Double.isFinite(filter.yMin())
+        || !Double.isFinite(filter.xMax())
+        || !Double.isFinite(filter.yMax())
+        || filter.xMin() > filter.xMax()
+        || filter.yMin() > filter.yMax())
+      throw new IllegalArgumentException("Invalid query envelope");
+    if (geomField() == null) throw new IllegalStateException("Table has no geometry");
+    var index = ch.so.agi.filegdb.index.SpatialIndex.path(path());
+    boolean indexed = false;
+    if (useIndex && java.nio.file.Files.exists(index)) {
+      try (var file = new java.io.RandomAccessFile(path().toFile(), "r")) {
+        file.seek(40);
+        int size = Integer.reverseBytes(file.readInt());
+        if (size > 0 && size < 128) {
+          byte[] creator = new byte[size];
+          file.readFully(creator);
+          indexed =
+              new String(creator, java.nio.charset.StandardCharsets.US_ASCII)
+                  .equals("filegdb4j-envelope-spx-1");
+        }
+      }
+    }
+    // A point's envelope equals the point itself, including in foreign geometry-cell indexes.
+    indexed |=
+        useIndex
+            && java.nio.file.Files.exists(index)
+            && geomField().geometry().kind() == ch.so.agi.filegdb.geometry.GeometryKind.POINT;
+    java.util.SortedSet<Long> candidates = null;
+    if (indexed)
+      candidates =
+          ch.so.agi.filegdb.index.SpatialIndex.candidates(
+              index, geomField().geometry().spatialIndexGridResolution(), filter);
+    var rows = new java.util.ArrayList<FileGdbRow>();
+    long read = 0;
+    if (candidates != null) {
+      for (long id : candidates) {
+        FileGdbRow row = read(id);
+        if (row == null) continue;
+        read++;
+        if (ch.so.agi.filegdb.geometry.GeometryBounds.intersects(
+            ch.so.agi.filegdb.geometry.GeometryBounds.of(row.geometry()), filter)) rows.add(row);
+      }
+    } else {
+      for (FileGdbRow row : this) {
+        read++;
+        if (ch.so.agi.filegdb.geometry.GeometryBounds.intersects(
+            ch.so.agi.filegdb.geometry.GeometryBounds.of(row.geometry()), filter)) rows.add(row);
+      }
+    }
+    return new QueryResult(rows, indexed, read);
+  }
+
   @Override
   public Iterator<FileGdbRow> iterator() {
     return new RowIterator();
