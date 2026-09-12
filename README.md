@@ -65,6 +65,44 @@ The dependency direction is `cli`/`jts`/`test-support` → `core` → `geometry`
 ./gradlew publishToMavenLocal
 ```
 
+### Maven snapshots
+
+The three runtime modules are published as Maven snapshots to
+`https://jars.interlis.guru/snapshots/`:
+
+| Module | Maven coordinates |
+|---|---|
+| `filegdb4j-geometry` | `ch.so.agi:filegdb4j-geometry:0.1.0-SNAPSHOT` |
+| `filegdb4j-core` | `ch.so.agi:filegdb4j-core:0.1.0-SNAPSHOT` |
+| `filegdb4j-jts` | `ch.so.agi:filegdb4j-jts:0.1.0-SNAPSHOT` |
+
+`filegdb4j-test-support` and `filegdb4j-cli` are not published to the remote
+repository. The generated POMs preserve the dependency chain from JTS to Core
+to Geometry.
+
+For a local consumer such as
+`../hop-vector-raster-plugin`, publish the current checkout to the local Maven
+repository first:
+
+```bash
+./gradlew publishToMavenLocal
+```
+
+To publish a snapshot directly, set `MAVEN_USERNAME` and `MAVEN_PASSWORD` (or
+the identically named Gradle properties) and run:
+
+```bash
+./gradlew publishSnapshots
+```
+
+The GitHub Actions workflow publishes only after the complete verification
+matrix succeeds. It uses the `INTERLIS_MAVEN_USERNAME` and
+`INTERLIS_MAVEN_TOKEN` repository secrets and publishes the exact artifacts from
+the verified build. Pull requests run verification only. The first consumer
+build should be run after the snapshot publication and its repository smoke
+test have completed; `hop-vector-raster-plugin` already contains the required
+snapshot repository and dependency declarations.
+
 Tests that need reference data or the GDAL command line tools are skipped when
 they are not available. The fixture directory is passed through the
 `filegdb.test.data` system property; the build sets it to `test-data/` when the

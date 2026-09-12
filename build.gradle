@@ -3,6 +3,17 @@ allprojects {
     version = '0.1.0-SNAPSHOT'
 }
 
+def runtimeModuleNames = [
+        'filegdb4j-geometry',
+        'filegdb4j-core',
+        'filegdb4j-jts'
+]
+
+def mavenUsername = providers.gradleProperty('MAVEN_USERNAME')
+        .orElse(providers.environmentVariable('MAVEN_USERNAME'))
+def mavenPassword = providers.gradleProperty('MAVEN_PASSWORD')
+        .orElse(providers.environmentVariable('MAVEN_PASSWORD'))
+
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'maven-publish'
@@ -46,5 +57,49 @@ subprojects {
                 from components.java
             }
         }
+
+        if (runtimeModuleNames.contains(project.name)) {
+            repositories {
+                maven {
+                    name = 'interlisGuruSnapshots'
+                    url = uri('https://jars.interlis.guru/snapshots/')
+                    credentials {
+                        username = mavenUsername.orNull
+                        password = mavenPassword.orNull
+                    }
+                    mavenContent {
+                        snapshotsOnly()
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.register('verifySnapshotPublication') {
+    group = 'publishing'
+    description = 'Verifies the version and module set used for snapshot publication.'
+
+    doLast {
+        def rootVersion = project.version.toString()
+        if (!rootVersion.endsWith('-SNAPSHOT')) {
+            throw new GradleException("Snapshot publication requires a -SNAPSHOT version, got ${rootVersion}")
+        }
+
+        runtimeModuleNames.each { moduleName ->
+            def module = project(":${moduleName}")
+            if (module.version.toString() != rootVersion) {
+                throw new GradleException("${moduleName} has version ${module.version}, expected ${rootVersion}")
+            }
+        }
+    }
+}
+
+tasks.register('publishSnapshots') {
+    group = 'publishing'
+    description = 'Publishes the three runtime modules to the interlis.guru snapshot repository.'
+    dependsOn 'verifySnapshotPublication'
+    dependsOn runtimeModuleNames.collect { moduleName ->
+        ":${moduleName}:publishMavenJavaPublicationToInterlisGuruSnapshotsRepository"
     }
 }

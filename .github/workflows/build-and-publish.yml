@@ -1,0 +1,323 @@
+name: Build and publish snapshots
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: filegdb4j-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }}, Java ${{ matrix.java }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+        java:
+          - '21'
+          - '25'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        shell: bash
+        run: ./gradlew clean build --no-daemon --stacktrace
+
+      - name: Verify snapshot publication task graph
+        if: matrix.os == 'ubuntu-24.04' && matrix.java == '21'
+        run: ./gradlew publishSnapshots --dry-run --no-daemon
+
+      - name: Stage canonical publication bundle
+        if: matrix.os == 'ubuntu-24.04' && matrix.java == '21'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            :filegdb4j-geometry:generatePomFileForMavenJavaPublication \
+            :filegdb4j-core:generatePomFileForMavenJavaPublication \
+            :filegdb4j-jts:generatePomFileForMavenJavaPublication \
+            --no-daemon
+
+          version="$(./gradlew -q properties | awk '$1 == "version:" { print $2; exit }')"
+          test -n "$version"
+          case "$version" in
+            *-SNAPSHOT) ;;
+            *) echo "Expected a snapshot version, got $version" >&2; exit 1 ;;
+          esac
+
+          rm -rf publication-bundle
+          mkdir -p publication-bundle
+
+          for module in geometry core jts; do
+            artifact="filegdb4j-${module}"
+            destination="publication-bundle/${artifact}"
+            mkdir -p "$destination"
+            module_dir="${artifact}"
+            build_dir="${module_dir}/build"
+
+            for file in \
+              "${artifact}-${version}.jar" \
+              "${artifact}-${version}-sources.jar" \
+              "${artifact}-${version}-javadoc.jar"; do
+              test -f "${build_dir}/libs/${file}"
+              cp "${build_dir}/libs/${file}" "${destination}/${file}"
+            done
+
+            pom="${artifact}-${version}.pom"
+            test -f "${build_dir}/publications/mavenJava/pom-default.xml"
+            cp "${build_dir}/publications/mavenJava/pom-default.xml" "${destination}/${pom}"
+          done
+
+          python3 - "$version" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          version = sys.argv[1]
+          root = pathlib.Path("publication-bundle")
+          modules = [
+              "filegdb4j-geometry",
+              "filegdb4j-core",
+              "filegdb4j-jts",
+          ]
+          expected_dependencies = {
+              "filegdb4j-geometry": set(),
+              "filegdb4j-core": {
+                  ("ch.so.agi", "filegdb4j-geometry", version),
+              },
+              "filegdb4j-jts": {
+                  ("ch.so.agi", "filegdb4j-core", version),
+                  ("org.locationtech.jts", "jts-core", "1.20.0"),
+              },
+          }
+          manifest = {
+              "groupId": "ch.so.agi",
+              "version": version,
+              "artifacts": [],
+          }
+
+          for artifact in modules:
+              directory = root / artifact
+              expected = {
+                  f"{artifact}-{version}.jar",
+                  f"{artifact}-{version}-sources.jar",
+                  f"{artifact}-{version}-javadoc.jar",
+                  f"{artifact}-{version}.pom",
+              }
+              actual = {path.name for path in directory.iterdir() if path.is_file()}
+              if actual != expected:
+                  raise SystemExit(f"Unexpected files for {artifact}: {sorted(actual)}")
+
+              pom_path = directory / f"{artifact}-{version}.pom"
+              xml_root = ET.parse(pom_path).getroot()
+              ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+              values = {
+                  "groupId": xml_root.findtext("m:groupId", namespaces=ns),
+                  "artifactId": xml_root.findtext("m:artifactId", namespaces=ns),
+                  "version": xml_root.findtext("m:version", namespaces=ns),
+              }
+              expected_values = {
+                  "groupId": "ch.so.agi",
+                  "artifactId": artifact,
+                  "version": version,
+              }
+              if values != expected_values:
+                  raise SystemExit(f"Invalid POM coordinates for {artifact}: {values}")
+
+              dependencies = {
+                  (
+                      dependency.findtext("m:groupId", namespaces=ns),
+                      dependency.findtext("m:artifactId", namespaces=ns),
+                      dependency.findtext("m:version", namespaces=ns),
+                  )
+                  for dependency in xml_root.findall("m:dependencies/m:dependency", namespaces=ns)
+              }
+              if dependencies != expected_dependencies[artifact]:
+                  raise SystemExit(f"Invalid dependencies for {artifact}: {dependencies}")
+
+              for path in sorted(directory.iterdir()):
+                  manifest["artifacts"].append({
+                      "path": str(path.relative_to(root)),
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  })
+
+          (root / "manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload canonical publication bundle
+        if: matrix.os == 'ubuntu-24.04' && matrix.java == '21'
+        uses: actions/upload-artifact@v4
+        with:
+          name: filegdb4j-publication-bundle
+          path: publication-bundle
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}-java-${{ matrix.java }}
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish snapshot
+    needs: verify
+    if: >-
+      needs.verify.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      MAVEN_USERNAME: ${{ secrets.INTERLIS_MAVEN_USERNAME }}
+      MAVEN_PASSWORD: ${{ secrets.INTERLIS_MAVEN_TOKEN }}
+
+    steps:
+      - name: Download canonical publication bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: filegdb4j-publication-bundle
+          path: publication-bundle
+
+      - name: Set up Java and Maven credentials
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          server-id: sogeo-snapshots
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Validate publication bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$MAVEN_USERNAME"
+          test -n "$MAVEN_PASSWORD"
+
+          python3 <<'PY'
+          import hashlib
+          import json
+          import pathlib
+
+          root = pathlib.Path("publication-bundle")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          if manifest["groupId"] != "ch.so.agi":
+              raise SystemExit(f"Unexpected groupId: {manifest['groupId']}")
+          if not manifest["version"].endswith("-SNAPSHOT"):
+              raise SystemExit(f"Expected a snapshot version, got {manifest['version']}")
+
+          for entry in manifest["artifacts"]:
+              path = root / entry["path"]
+              if not path.is_file():
+                  raise SystemExit(f"Missing publication artifact: {path}")
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if digest != entry["sha256"]:
+                  raise SystemExit(f"Checksum mismatch: {path}")
+          PY
+
+      - name: Deploy runtime modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("publication-bundle/manifest.json"))["version"])')"
+
+          for artifact in filegdb4j-geometry filegdb4j-core filegdb4j-jts; do
+            directory="publication-bundle/${artifact}"
+            mvn -B -ntp \
+              org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy-file \
+              -DgroupId=ch.so.agi \
+              -DartifactId="$artifact" \
+              -Dversion="$version" \
+              -Dfile="${directory}/${artifact}-${version}.jar" \
+              -DpomFile="${directory}/${artifact}-${version}.pom" \
+              -Dpackaging=jar \
+              -DrepositoryId=sogeo-snapshots \
+              -Durl=https://jars.interlis.guru/snapshots/ \
+              -Dfiles="${directory}/${artifact}-${version}-sources.jar,${directory}/${artifact}-${version}-javadoc.jar" \
+              -Dclassifiers=sources,javadoc \
+              -Dtypes=jar,jar
+          done
+
+      - name: Resolve snapshot from an empty Maven cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_dir="${RUNNER_TEMP}/filegdb4j-maven-smoke"
+          rm -rf "$smoke_dir"
+          mkdir -p "$smoke_dir"
+          version="$(python3 -c 'import json; print(json.load(open("publication-bundle/manifest.json"))["version"])')"
+
+          cat > "${smoke_dir}/pom.xml" <<EOF
+          <project xmlns="http://maven.apache.org/POM/4.0.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>ch.so.agi.filegdb4j.smoke</groupId>
+            <artifactId>filegdb4j-smoke</artifactId>
+            <version>1.0.0</version>
+            <repositories>
+              <repository>
+                <id>sogeo-snapshots</id>
+                <url>https://jars.interlis.guru/snapshots/</url>
+                <releases><enabled>false</enabled></releases>
+                <snapshots><enabled>true</enabled></snapshots>
+              </repository>
+            </repositories>
+            <dependencies>
+              <dependency>
+                <groupId>ch.so.agi</groupId>
+                <artifactId>filegdb4j-jts</artifactId>
+                <version>${version}</version>
+              </dependency>
+            </dependencies>
+          </project>
+          EOF
+
+          mvn -B -ntp -U \
+            -Dmaven.repo.local="${smoke_dir}/m2" \
+            -f "${smoke_dir}/pom.xml" \
+            dependency:go-offline
+
+          for artifact in filegdb4j-geometry filegdb4j-core filegdb4j-jts; do
+            test -d "${smoke_dir}/m2/ch/so/agi/${artifact}/${version}"
+          done
