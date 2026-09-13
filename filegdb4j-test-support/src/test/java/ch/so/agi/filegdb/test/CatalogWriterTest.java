@@ -167,6 +167,7 @@ class CatalogWriterTest {
             field=ogr.FieldDefn('id',ogr.OFTInteger)
             field.SetDomainName('status')
             layer.CreateField(field)
+        d.FlushCache()  # GDAL 3.8 registers newly created tables on flush
         r=gdal.Relationship('relation','origin','destination',gdal.GRC_ONE_TO_MANY)
         r.SetLeftTableFields(['id'])
         r.SetRightTableFields(['id'])

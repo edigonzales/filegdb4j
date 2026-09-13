@@ -45,13 +45,24 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Install independent GDAL reference
+      - name: Set up independent GDAL reference
         if: matrix.os == 'ubuntu-24.04' && matrix.java == '21'
-        run: sudo apt-get update && sudo apt-get install -y gdal-bin python3-gdal
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: gdal-reference
+          create-args: >-
+            python=3.12
+            gdal=3.12
+          cache-environment: true
+
+      - name: Configure GDAL reference path
+        if: matrix.os == 'ubuntu-24.04' && matrix.java == '21'
+        shell: micromamba-shell {0}
+        run: |
+          ogrinfo --version
+          echo "GDAL_PREFIX=$CONDA_PREFIX" >> "$GITHUB_ENV"
 
       - name: Build and test
-        env:
-          GDAL_PREFIX: ${{ matrix.os == 'ubuntu-24.04' && matrix.java == '21' && '/usr' || '' }}
         shell: bash
         run: ./gradlew clean build --no-daemon --stacktrace
 
