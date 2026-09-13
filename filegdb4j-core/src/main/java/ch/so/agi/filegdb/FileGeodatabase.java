@@ -54,10 +54,9 @@ public final class FileGeodatabase implements AutoCloseable {
   /**
    * Creates a new file geodatabase directory with its system tables.
    *
-   * <p>The returned instance is writable: feature classes can be created with
-   * {@link #createFeatureClass(FeatureClassDefinition)}. The catalog snapshot
-   * does not include datasets created afterwards; close and reopen the
-   * database for reading.
+   * <p>The returned instance is writable: feature classes can be created with {@link
+   * #createFeatureClass(FeatureClassDefinition)}. The catalog snapshot does not include datasets
+   * created afterwards; close and reopen the database for reading.
    */
   public static FileGeodatabase create(Path directory) throws IOException {
     Path normalized = directory.toAbsolutePath().normalize();
@@ -68,6 +67,31 @@ public final class FileGeodatabase implements AutoCloseable {
       creator.close();
       throw e;
     }
+  }
+
+  /** Starts an exclusive, recoverable edit of an existing geodatabase. */
+  public static FileGdbEditSession edit(Path directory) throws IOException {
+    return FileGdbEditSession.open(directory, false, () -> {});
+  }
+
+  static FileGeodatabase openWritable(Path directory, Runnable cancellation) throws IOException {
+    return new FileGeodatabase(
+        directory, GdbCatalog.open(directory), GdbCreator.openExisting(directory, cancellation));
+  }
+
+  public GdbFeatureWriter appendFeatures(String name, boolean createSpatialIndex)
+      throws IOException {
+    if (creator == null) throw new IllegalStateException("File geodatabase is not writable");
+    return creator.appendFeatures(name, createSpatialIndex);
+  }
+
+  public void validateAppend(String name) throws IOException {
+    GdbCreator.checkAppendSupport(catalog, requireDataset(name), () -> {});
+  }
+
+  public GdbTableWriter appendRows(String name) throws IOException {
+    if (creator == null) throw new IllegalStateException("File geodatabase is not writable");
+    return creator.appendRows(name);
   }
 
   public boolean isWritable() {

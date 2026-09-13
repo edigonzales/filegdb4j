@@ -22,7 +22,26 @@ public record FileGdbField(
     boolean editable,
     int maxWidth,
     boolean highPrecision,
-    String domain) {
+    String domain,
+    Object defaultValue) {
+
+  public FileGdbField(
+      String name,
+      String alias,
+      FileGdbFieldType type,
+      boolean nullable,
+      boolean required,
+      boolean editable,
+      int maxWidth,
+      boolean highPrecision,
+      String domain) {
+    this(name, alias, type, nullable, required, editable, maxWidth, highPrecision, domain, null);
+  }
+
+  public FileGdbField withDefaultValue(Object value) {
+    return new FileGdbField(
+        name, alias, type, nullable, required, editable, maxWidth, highPrecision, domain, value);
+  }
 
   public FileGdbField(
       String name,
@@ -77,31 +96,58 @@ public record FileGdbField(
 
   public FileGdbField withAlias(String alias) {
     return new FileGdbField(
-        name, alias, type, nullable, required, editable, maxWidth, highPrecision, domain);
+        name,
+        alias,
+        type,
+        nullable,
+        required,
+        editable,
+        maxWidth,
+        highPrecision,
+        domain,
+        defaultValue);
   }
 
   public FileGdbField asNullable() {
     return new FileGdbField(
-        name, alias, type, true, required, editable, maxWidth, highPrecision, domain);
+        name, alias, type, true, required, editable, maxWidth, highPrecision, domain, defaultValue);
   }
 
   public FileGdbField asRequired() {
     return new FileGdbField(
-        name, alias, type, nullable, true, editable, maxWidth, highPrecision, domain);
+        name, alias, type, nullable, true, editable, maxWidth, highPrecision, domain, defaultValue);
   }
 
   public FileGdbField notEditable() {
     return new FileGdbField(
-        name, alias, type, nullable, required, false, maxWidth, highPrecision, domain);
+        name,
+        alias,
+        type,
+        nullable,
+        required,
+        false,
+        maxWidth,
+        highPrecision,
+        domain,
+        defaultValue);
   }
 
   public FileGdbField withDomain(String domain) {
     return new FileGdbField(
-        name, alias, type, nullable, required, editable, maxWidth, highPrecision, domain);
+        name,
+        alias,
+        type,
+        nullable,
+        required,
+        editable,
+        maxWidth,
+        highPrecision,
+        domain,
+        defaultValue);
   }
 
   public FileGdbField withHighPrecision() {
     return new FileGdbField(
-        name, alias, type, nullable, required, editable, maxWidth, true, domain);
+        name, alias, type, nullable, required, editable, maxWidth, true, domain, defaultValue);
   }
 }

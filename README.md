@@ -245,12 +245,47 @@ A GDAL-mediated measured-curve round-trip therefore needs separate validation.
 before the fields which reference them with `withDomain(name)`. The creator validates
 duplicate catalog names, field/domain types and relationship key references before
 writing those definitions. Both participating datasets must already exist in the
-same creation session. Ordinary field values are not checked for domain membership
+database or have been created in the current edit session. Ordinary field values are not checked for domain membership
 by the low-level writer; `DomainValues.contains()` is available to callers.
 
-Only a newly created database is writable. The library does not enforce unique keys,
+Existing databases can be changed through `FileGeodatabase.edit()`. The library does not enforce unique keys,
 foreign-key existence or relationship cardinality on row data. GDAL cross-checks
 cover coded/range domains, field assignments and simple 1:1 / 1:n relationships;
 this does not claim testing with ArcGIS. Run with `GDAL_PREFIX=/path/to/gdal` to use
 its `bin/ogrinfo`. The canonical Ubuntu CI build installs GDAL so this verification
 runs before snapshot publication.
+
+
+### Editing an existing FileGDB
+
+```java
+try (var edit = FileGeodatabase.edit(Path.of("buildings.gdb"))) {
+  try (var writer = edit.database().appendFeatures("buildings", true)) {
+    writer.write(attributes, geometry); // existing target field order; OBJECTID is generated
+  }
+  // createTable, createFeatureClass, createDomain and createRelationship are also available.
+  edit.commit();
+}
+```
+
+`FileGeodatabase.open()` remains read-only. `edit()` locks the canonical target path,
+copies the whole database to a sibling workspace and checks the original for changes
+before committing. Closing without commit discards the workspace. The directory
+replacement uses a backup and journal; the next edit recovers an interrupted replacement.
+This requires additional disk space and exclusive access: close ArcGIS, GDAL and other
+readers/writers first. It is not an atomic directory exchange for concurrent readers.
+Do not manually delete recovery backups or journals. The sibling lock file remains
+present; the operating-system lock, not its existence, indicates ownership.
+
+Append preserves OBJECTIDs, deleted slots, field definitions and coordinate precision.
+Version-3 tables with 4/5/6-byte offsets and UTF-8/UTF-16 strings are supported. Field
+metadata exposes typed constant `defaultValue()` values. The low-level writer expects
+all attribute values; applying defaults and checking domain membership remain caller
+responsibilities. Existing spatial indexes are rebuilt from all stored geometries;
+`false` only suppresses creation of a missing index. Empty appends leave data unchanged.
+
+Attributive indexes, managed GlobalIDs, managed area/length fields, subtypes, attribute
+rules, attachments, controller memberships and complex relationships on edited datasets
+are rejected. Unmodified datasets are copied unchanged. No upsert, user-row update,
+delete, schema migration or data-integrity checks are introduced. Equivalent existing
+domains and relationships can be reused; conflicting definitions are rejected.

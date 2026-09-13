@@ -42,6 +42,9 @@ subprojects {
     }
 
     tasks.withType(Test).configureEach {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(providers.gradleProperty('testJavaVersion').getOrElse('21'))
+        }
         useJUnitPlatform()
         systemProperty 'filegdb.test.data',
                 rootProject.layout.projectDirectory.dir('test-data').asFile.absolutePath

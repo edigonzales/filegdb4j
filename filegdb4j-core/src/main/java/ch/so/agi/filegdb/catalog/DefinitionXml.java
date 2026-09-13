@@ -75,6 +75,64 @@ public final class DefinitionXml {
     return result;
   }
 
+  /** Editing rules whose side effects this library cannot maintain. */
+  public static String unsupportedEditingReason(String xml) {
+    Element root = parse(xml);
+    if (root == null) return "Missing dataset definition";
+    for (String name : List.of("SubtypeFieldName", "AreaFieldName", "LengthFieldName")) {
+      Element element = find(root, name);
+      if (element != null && !element.getTextContent().isBlank()) return name;
+    }
+    for (String name : List.of("Subtypes", "AttributeRules", "ControllerMemberships")) {
+      Element element = find(root, name);
+      if (element != null)
+        for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling())
+          if (child instanceof Element) return name;
+    }
+    for (String name : List.of("HasAttachments", "EditorTrackingEnabled")) {
+      Element element = find(root, name);
+      if (element != null && "true".equalsIgnoreCase(element.getTextContent().trim())) return name;
+    }
+    return null;
+  }
+
+  /** Updates only storage extent and index metadata, retaining other XML elements. */
+  public static String withStorageExtent(
+      String xml, ch.so.agi.filegdb.geometry.Envelope bounds, boolean indexed) {
+    Element root = parse(xml);
+    if (root == null) throw new IllegalArgumentException("Dataset definition XML missing");
+    Element index = find(root, "HasSpatialIndex");
+    if (index != null) index.setTextContent(Boolean.toString(indexed));
+    if (bounds != null) {
+      Element extent = find(root, "Extent");
+      if (extent == null) {
+        extent = root.getOwnerDocument().createElement("Extent");
+        root.appendChild(extent);
+      }
+      extent.removeAttributeNS("http://www.w3.org/2001/XMLSchema-instance", "nil");
+      String[] names = {"XMin", "YMin", "XMax", "YMax"};
+      double[] values = {bounds.xMin(), bounds.yMin(), bounds.xMax(), bounds.yMax()};
+      for (int i = 0; i < names.length; i++) {
+        Element field = find(extent, names[i]);
+        if (field == null) {
+          field = root.getOwnerDocument().createElement(names[i]);
+          extent.appendChild(field);
+        }
+        field.setTextContent(Double.toString(values[i]));
+      }
+    }
+    try {
+      var transformer = javax.xml.transform.TransformerFactory.newInstance().newTransformer();
+      var output = new java.io.StringWriter();
+      transformer.transform(
+          new javax.xml.transform.dom.DOMSource(root.getOwnerDocument()),
+          new javax.xml.transform.stream.StreamResult(output));
+      return output.toString();
+    } catch (javax.xml.transform.TransformerException e) {
+      throw new IllegalArgumentException("Cannot update dataset metadata", e);
+    }
+  }
+
   /** Parses a coded value or range domain definition, or returns {@code null}. */
   public static Domain domain(String xml) {
     Element root = parse(xml);

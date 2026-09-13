@@ -64,6 +64,176 @@ public final class TableFileWriter implements AutoCloseable {
   private boolean fieldsWritten;
   private boolean closed;
   private boolean spatialIndex;
+  private int offsetWidth = TABLX_OFFSET_SIZE;
+  private boolean stringsUtf8 = true;
+  private Runnable cancellation = () -> {};
+  private int gridCount = 1;
+  private boolean changed = true;
+
+  public void setCancellation(Runnable check) {
+    cancellation = java.util.Objects.requireNonNull(check);
+  }
+
+  /** Opens a physical table in a private edit workspace. Does not truncate existing rows. */
+  public static TableFileWriter append(
+      Path path,
+      boolean createIndex,
+      java.util.Map<String, ch.so.agi.filegdb.table.FieldMetadata> metadata)
+      throws IOException {
+    return append(path, createIndex, metadata, () -> {});
+  }
+
+  public static TableFileWriter append(
+      Path path,
+      boolean createIndex,
+      java.util.Map<String, ch.so.agi.filegdb.table.FieldMetadata> metadata,
+      Runnable cancellation)
+      throws IOException {
+    cancellation.run();
+    try (var source = ch.so.agi.filegdb.table.FileGdbTableFile.open(path, metadata)) {
+      var layout = source.writeLayout();
+      if (layout.version() != 3 || !source.reliableObjectIds())
+        throw new GdbException(
+            "Append requires a version 3 table with reliable OBJECTIDs: " + path);
+      FileChannel data = FileChannel.open(path, StandardOpenOption.READ, StandardOpenOption.WRITE);
+      try {
+        FileChannel offsets =
+            FileChannel.open(
+                withExtension(path, ".gdbtablx"),
+                StandardOpenOption.READ,
+                StandardOpenOption.WRITE);
+        try {
+          return new TableFileWriter(path, data, offsets, source, createIndex, cancellation);
+        } catch (Exception e) {
+          offsets.close();
+          throw e;
+        }
+      } catch (Exception e) {
+        data.close();
+        throw e;
+      }
+    }
+  }
+
+  private TableFileWriter(
+      Path path,
+      FileChannel data,
+      FileChannel offsets,
+      ch.so.agi.filegdb.table.FileGdbTableFile source,
+      boolean createIndex,
+      Runnable cancellation)
+      throws IOException {
+    this.cancellation = cancellation;
+    this.path = path;
+    table = data;
+    tableX = offsets;
+    geometryKind = source.geometryKind();
+    hasZ = source.hasZ();
+    hasM = source.hasM();
+    var layout = source.writeLayout();
+    offsetWidth = layout.offsetWidth();
+    if (offsetWidth == 0) {
+      ByteBuffer header = ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+      while (header.hasRemaining())
+        if (tableX.read(header) < 0) throw new IOException("Missing row index header");
+      offsetWidth = header.getInt(12);
+    }
+    if (offsetWidth < 4 || offsetWidth > 6) throw new IOException("Unsupported row offset width");
+    stringsUtf8 = source.stringsUtf8();
+    physicalFields = source.fields();
+    attributeFields.addAll(
+        physicalFields.stream()
+            .filter(
+                f -> f.type() != FileGdbFieldType.OBJECTID && f.type() != FileGdbFieldType.GEOMETRY)
+            .toList());
+    geometryField = source.geomField();
+    geometryFieldIndex = source.geomFieldIndex();
+    nullableCount = (int) physicalFields.stream().filter(FileGdbField::nullable).count();
+    nullMaskSize = (nullableCount + 7) / 8;
+    fieldsWritten = true;
+    totalRecordCount = source.totalRecordCount();
+    validRecordCount = source.validRecordCount();
+    fileSize = table.size();
+    offsetFieldDesc = layout.descriptorOffset();
+    fieldDescLength = source.fieldDescriptorLength();
+    headerBufferMaxSize = source.headerBufferMaxSize();
+    bboxFileOffset = layout.extentOffset();
+    gridResFileOffset = layout.gridOffset();
+    blockMap = layout.blockMap();
+    if (blockMap == null || blockMap.length == 0) {
+      int pages = (int) ((totalRecordCount + 1023) / 1024);
+      blockMap = new byte[(pages + 7) / 8];
+      for (int i = 0; i < pages; i++) blockMap[i / 8] |= (byte) (1 << (i % 8));
+    }
+    boolean indexed = java.nio.file.Files.exists(ch.so.agi.filegdb.index.SpatialIndex.path(path));
+    spatialIndex = geometryField != null && (createIndex || indexed);
+    changed = spatialIndex && !indexed;
+    if (geometryField != null) {
+      gridCount = geometryField.geometry().spatialIndexGridResolution().size();
+      // Scan stored geometries: missing/stale source extents must not lose old features.
+      for (long i = 0; i < totalRecordCount; i++) {
+        cancellation.run();
+        Object[] row = source.readRow(i);
+        if (row != null && row[geometryFieldIndex] instanceof FileGdbGeometry g) {
+          updateExtent(g);
+          var b = ch.so.agi.filegdb.geometry.GeometryBounds.of(g);
+          if (b != null) {
+            include(new FileGdbPoint(b.xMin(), b.yMin()));
+            include(new FileGdbPoint(b.xMax(), b.yMax()));
+          }
+        }
+      }
+    }
+  }
+
+  boolean changed() {
+    return changed;
+  }
+
+  /** Internal catalog replacement retaining the row identity and all other rows. */
+  void replaceRow(long objectId, Object[] values, FileGdbGeometry geometry) throws IOException {
+    if (closed || objectId < 1 || objectId > totalRecordCount)
+      throw new IOException("Invalid catalog row");
+    cancellation.run();
+    ByteBuffer previous = ByteBuffer.allocate(offsetWidth);
+    long position = indexPosition(objectId - 1);
+    while (previous.hasRemaining())
+      if (tableX.read(previous, position + previous.position()) < 0)
+        throw new IOException("Truncated row index");
+    long oldOffset = 0;
+    for (int i = 0; i < offsetWidth; i++) oldOffset |= (previous.array()[i] & 255L) << (8 * i);
+    if (oldOffset == 0) throw new IOException("Missing catalog row");
+    byte[] encoded = encodeRow(values, geometry);
+    if (fileSize + encoded.length + 4 >= (1L << (offsetWidth * 8)))
+      throw new IOException("Catalog exceeds offset width");
+    BinaryBuffer row = new BinaryBuffer(encoded.length + 4);
+    row.u32(encoded.length);
+    row.bytes(encoded);
+    writeFully(table, fileSize, row.toByteArray());
+    byte[] offset = new byte[offsetWidth];
+    for (int i = 0; i < offsetWidth; i++) offset[i] = (byte) (fileSize >>> (8 * i));
+    writeFully(tableX, position, offset);
+    ByteBuffer oldLength = ByteBuffer.allocate(4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+    while (oldLength.hasRemaining())
+      if (table.read(oldLength, oldOffset + oldLength.position()) < 0)
+        throw new IOException("Truncated old catalog row");
+    BinaryBuffer deleted = new BinaryBuffer(4);
+    deleted.i32(-oldLength.getInt(0));
+    writeFully(table, oldOffset, deleted.toByteArray());
+    fileSize += row.size();
+    headerBufferMaxSize = Math.max(headerBufferMaxSize, encoded.length);
+    changed = true;
+    updateHeaders();
+  }
+
+  private long indexPosition(long row) {
+    int block = (int) (row / 1024);
+    long before = 0;
+    for (int i = 0; i < block / 8; i++) before += Integer.bitCount(blockMap[i] & 255);
+    if (block % 8 != 0)
+      before += Integer.bitCount((blockMap[block / 8] & 255) & ((1 << (block % 8)) - 1));
+    return TABLX_HEADER_SIZE + (before * 1024 + row % 1024) * offsetWidth;
+  }
 
   private long validRecordCount;
   private long totalRecordCount;
@@ -80,6 +250,7 @@ public final class TableFileWriter implements AutoCloseable {
   private double maxY = Double.NaN;
   private double minZ = Double.NaN;
   private double maxZ = Double.NaN;
+  private double minM = Double.NaN, maxM = Double.NaN;
   private byte[] blockMap = new byte[0];
 
   private TableFileWriter(
@@ -185,6 +356,15 @@ public final class TableFileWriter implements AutoCloseable {
   }
 
   public void addField(FileGdbField field) {
+    if (field.defaultValue() != null
+        && (!field.editable()
+            || java.util.Set.of(
+                    FileGdbFieldType.BINARY,
+                    FileGdbFieldType.GUID,
+                    FileGdbFieldType.GLOBALID,
+                    FileGdbFieldType.XML)
+                .contains(field.type())))
+      throw new IllegalArgumentException("Unsupported constant default for field: " + field.name());
     if (fieldsWritten) {
       throw new IllegalStateException("Fields must be added before the first row");
     }
@@ -303,17 +483,18 @@ public final class TableFileWriter implements AutoCloseable {
     }
     byte[] blob = encodeRow(attributeValues, geometry);
 
-    if (fileSize + blob.length + 4 > 0xffffffffL || totalRecordCount >= Integer.MAX_VALUE) {
+    if (fileSize + blob.length + 4 >= (1L << (offsetWidth * 8))
+        || totalRecordCount >= Integer.MAX_VALUE) {
       throw new GdbException("Table exceeds supported 32-bit row index limits");
     }
     long objectId = totalRecordCount + 1;
     long rowIndex = objectId - 1;
-    if (rowIndex % TABLX_FEATURES_PER_PAGE == 0) {
-      // Zero fill the new row index page so that the trailer position is valid.
-      long pageOffset =
-          TABLX_HEADER_SIZE
-              + (rowIndex / TABLX_FEATURES_PER_PAGE) * TABLX_OFFSET_SIZE * TABLX_FEATURES_PER_PAGE;
-      writeFully(tableX, pageOffset, new byte[TABLX_OFFSET_SIZE * TABLX_FEATURES_PER_PAGE]);
+    cancellation.run();
+    int block = (int) (rowIndex / 1024);
+    if (blockMap.length <= block / 8) blockMap = java.util.Arrays.copyOf(blockMap, block / 8 + 1);
+    if ((blockMap[block / 8] & (1 << (block % 8))) == 0) {
+      blockMap[block / 8] |= (byte) (1 << (block % 8));
+      writeFully(tableX, indexPosition(rowIndex - rowIndex % 1024), new byte[offsetWidth * 1024]);
     }
 
     BinaryBuffer row = new BinaryBuffer(blob.length + 4);
@@ -323,9 +504,10 @@ public final class TableFileWriter implements AutoCloseable {
     writeFully(table, rowOffset, row.toByteArray());
     fileSize += 4 + blob.length;
 
-    BinaryBuffer offset = new BinaryBuffer(4);
-    offset.u32(rowOffset);
-    writeFully(tableX, TABLX_HEADER_SIZE + rowIndex * TABLX_OFFSET_SIZE, offset.toByteArray());
+    byte[] offset = new byte[offsetWidth];
+    for (int i = 0; i < offsetWidth; i++) offset[i] = (byte) (rowOffset >>> (8 * i));
+    writeFully(tableX, indexPosition(rowIndex), offset);
+    changed = true;
 
     totalRecordCount = objectId;
     validRecordCount++;
@@ -345,6 +527,7 @@ public final class TableFileWriter implements AutoCloseable {
     java.util.Arrays.fill(mask, (byte) 0xFF);
     int nullableIndex = 0;
 
+    int attributeIndex = 0;
     for (int i = 0; i < physicalFields.size(); i++) {
       FileGdbField field = physicalFields.get(i);
       if (field.type() == FileGdbFieldType.OBJECTID) {
@@ -375,7 +558,7 @@ public final class TableFileWriter implements AutoCloseable {
         continue;
       }
 
-      Object value = attributeValues[i - 1];
+      Object value = attributeValues[attributeIndex++];
       if (value == null) {
         if (!field.nullable()) {
           throw new GdbException("Null value in non-nullable field " + field.name());
@@ -399,7 +582,7 @@ public final class TableFileWriter implements AutoCloseable {
     mask[bitIndex / 8] &= (byte) ~(1 << (bitIndex % 8));
   }
 
-  private static void encodeAttribute(BinaryBuffer buffer, FileGdbField field, Object value) {
+  private void encodeAttribute(BinaryBuffer buffer, FileGdbField field, Object value) {
     switch (field.type()) {
       case INT16 -> buffer.i16(((Number) value).shortValue());
       case INT32 -> buffer.i32(((Number) value).intValue());
@@ -407,7 +590,13 @@ public final class TableFileWriter implements AutoCloseable {
       case FLOAT32 -> buffer.f32(((Number) value).floatValue());
       case FLOAT64 -> buffer.f64(((Number) value).doubleValue());
       case STRING, XML -> {
-        byte[] bytes = value.toString().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes =
+            value
+                .toString()
+                .getBytes(
+                    field.type() == FileGdbFieldType.STRING && !stringsUtf8
+                        ? StandardCharsets.UTF_16LE
+                        : StandardCharsets.UTF_8);
         buffer.varUInt(bytes.length);
         buffer.bytes(bytes);
       }
@@ -550,7 +739,11 @@ public final class TableFileWriter implements AutoCloseable {
     minY = Double.isNaN(minY) ? point.y() : Math.min(minY, point.y());
     maxX = Double.isNaN(maxX) ? point.x() : Math.max(maxX, point.x());
     maxY = Double.isNaN(maxY) ? point.y() : Math.max(maxY, point.y());
-    if (point.z() != null) {
+    if (point.m() != null && Double.isFinite(point.m())) {
+      minM = Double.isNaN(minM) ? point.m() : Math.min(minM, point.m());
+      maxM = Double.isNaN(maxM) ? point.m() : Math.max(maxM, point.m());
+    }
+    if (point.z() != null && Double.isFinite(point.z())) {
       minZ = Double.isNaN(minZ) ? point.z() : Math.min(minZ, point.z());
       maxZ = Double.isNaN(maxZ) ? point.z() : Math.max(maxZ, point.z());
     }
@@ -566,7 +759,15 @@ public final class TableFileWriter implements AutoCloseable {
       case STRING -> {
         buffer.u32(field.maxWidth());
         buffer.u8(flags);
-        buffer.u8(0);
+        byte[] defaults =
+            field.defaultValue() == null
+                ? new byte[0]
+                : field
+                    .defaultValue()
+                    .toString()
+                    .getBytes(stringsUtf8 ? StandardCharsets.UTF_8 : StandardCharsets.UTF_16LE);
+        buffer.varUInt(defaults.length);
+        buffer.bytes(defaults);
       }
       case OBJECTID -> {
         buffer.u8(4);
@@ -643,7 +844,10 @@ public final class TableFileWriter implements AutoCloseable {
             };
         buffer.u8(size);
         buffer.u8(flags);
-        buffer.u8(0);
+        BinaryBuffer defaults = new BinaryBuffer(16);
+        if (field.defaultValue() != null) encodeAttribute(defaults, field, field.defaultValue());
+        buffer.u8(defaults.size());
+        buffer.bytes(defaults.toByteArray());
       }
     }
   }
@@ -695,6 +899,10 @@ public final class TableFileWriter implements AutoCloseable {
         bbox.f64(Double.isNaN(minZ) ? 0 : minZ);
         bbox.f64(Double.isNaN(maxZ) ? 0 : maxZ);
       }
+      if (hasM) {
+        bbox.f64(minM);
+        bbox.f64(maxM);
+      }
       writeFully(table, bboxFileOffset, bbox.toByteArray());
     }
 
@@ -703,17 +911,15 @@ public final class TableFileWriter implements AutoCloseable {
     if (blockMap.length < neededBytes) {
       blockMap = new byte[neededBytes];
     }
-    for (long block = 0; block < blocksPresent; block++) {
-      blockMap[(int) (block / 8)] |= (byte) (1 << (block % 8));
-    }
+    long physicalBlocks = 0;
+    for (byte bits : blockMap) physicalBlocks += Integer.bitCount(bits & 255);
 
     BinaryBuffer tableXHeader = new BinaryBuffer(12);
-    tableXHeader.u32(blocksPresent);
+    tableXHeader.u32(physicalBlocks);
     tableXHeader.u32(totalRecordCount);
     writeFully(tableX, 4, tableXHeader.toByteArray());
 
-    long trailerOffset =
-        TABLX_HEADER_SIZE + blocksPresent * TABLX_OFFSET_SIZE * TABLX_FEATURES_PER_PAGE;
+    long trailerOffset = TABLX_HEADER_SIZE + physicalBlocks * offsetWidth * TABLX_FEATURES_PER_PAGE;
     // Pad the block map to a multiple of 32 32-bit words, like the FileGDB SDK.
     int words = (blockMap.length + 3) / 4;
     int paddedWords = ((words + 31) / 32) * 32;
@@ -736,7 +942,7 @@ public final class TableFileWriter implements AutoCloseable {
     BinaryBuffer trailer = new BinaryBuffer(16 + padded.length);
     trailer.u32(paddedWords);
     trailer.u32(blocksPresent);
-    trailer.u32(blocksPresent);
+    trailer.u32(physicalBlocks);
     trailer.u32(paddedWords - trailingZeroWords);
     trailer.bytes(padded);
     writeFully(tableX, trailerOffset, trailer.toByteArray());
@@ -749,12 +955,14 @@ public final class TableFileWriter implements AutoCloseable {
     }
     closed = true;
     try {
-      if (fieldsWritten) {
+      if (fieldsWritten && changed) {
+        cancellation.run();
         sync();
         if (spatialIndex) {
-          double grid = ch.so.agi.filegdb.index.SpatialIndex.build(path);
+          double grid = ch.so.agi.filegdb.index.SpatialIndex.build(path, cancellation);
           BinaryBuffer value = new BinaryBuffer(8);
           value.f64(grid);
+          for (int i = 1; i < gridCount; i++) value.f64(0);
           writeFully(table, gridResFileOffset, value.toByteArray());
           table.force(false);
         }

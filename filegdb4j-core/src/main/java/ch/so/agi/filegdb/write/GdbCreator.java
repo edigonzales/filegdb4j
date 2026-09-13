@@ -70,13 +70,195 @@ public final class GdbCreator implements AutoCloseable {
   private final String rootGuid;
   private final String workspaceGuid;
   private final Set<String> spatialRefTexts = new HashSet<>();
-  private final java.util.Map<String, String> datasetUuids = new java.util.HashMap<>();
+  private final java.util.Map<String, String> datasetUuids =
+      new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
   private final java.util.Map<String, ch.so.agi.filegdb.catalog.Domain> domains =
-      new java.util.HashMap<>();
-  private final java.util.Map<String, String> domainUuids = new java.util.HashMap<>();
-  private final java.util.Map<String, List<FileGdbField>> datasetFields = new java.util.HashMap<>();
+      new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+  private final java.util.Map<String, String> domainUuids =
+      new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+  private final java.util.Map<String, List<FileGdbField>> datasetFields =
+      new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
   private final Set<String> names = new HashSet<>();
   private int nextTableNumber;
+
+  private Runnable cancellation = () -> {};
+  private final java.util.List<TableFileWriter> datasetWriters = new java.util.ArrayList<>();
+  private final Set<String> appended = new HashSet<>();
+  private ch.so.agi.filegdb.catalog.GdbCatalog existingCatalog;
+
+  public static GdbCreator openExisting(Path directory, Runnable cancellation) throws IOException {
+    return new GdbCreator(directory, cancellation);
+  }
+
+  private GdbCreator(Path directory, Runnable cancellation) throws IOException {
+    this.directory = directory;
+    this.cancellation = cancellation;
+    existingCatalog = ch.so.agi.filegdb.catalog.GdbCatalog.open(directory);
+    rootGuid =
+        existingCatalog.items().stream()
+            .filter(
+                i ->
+                    i.type()
+                            .replace("{", "")
+                            .replace("}", "")
+                            .equalsIgnoreCase(FOLDER_TYPE_UUID.substring(1, 37))
+                        && "\\".equals(i.path()))
+            .map(i -> i.uuid().toString())
+            .findFirst()
+            .orElseThrow(() -> new IOException("FileGDB root folder is missing"));
+    workspaceGuid =
+        existingCatalog.items().stream()
+            .filter(
+                i ->
+                    i.type()
+                        .replace("{", "")
+                        .replace("}", "")
+                        .equalsIgnoreCase(WORKSPACE_TYPE_UUID.substring(1, 37)))
+            .map(i -> i.uuid().toString())
+            .findFirst()
+            .orElse("");
+    var opened = new java.util.ArrayList<TableFileWriter>();
+    try {
+      for (int i = 1; i <= 7; i++) {
+        cancellation.run();
+        var writer =
+            TableFileWriter.append(
+                directory.resolve(GdbPaths.tableFileName(i)),
+                false,
+                java.util.Map.of(),
+                cancellation);
+        writer.setCancellation(cancellation);
+        opened.add(writer);
+      }
+    } catch (Exception e) {
+      for (var w : opened)
+        try {
+          w.close();
+        } catch (Exception c) {
+          e.addSuppressed(c);
+        }
+      throw e;
+    }
+    systemCatalog = opened.get(0);
+    dbtune = opened.get(1);
+    spatialRefs = opened.get(2);
+    items = opened.get(3);
+    itemTypes = opened.get(4);
+    itemRelationships = opened.get(5);
+    itemRelationshipTypes = opened.get(6);
+    nextTableNumber = Math.toIntExact(systemCatalog.totalRecordCount() + 1);
+    for (var item : existingCatalog.items()) {
+      if (item.name() != null && !item.name().isEmpty())
+        names.add(item.name().toLowerCase(Locale.ROOT));
+      if (item.tableNumber() > 0) datasetUuids.put(item.name(), item.uuid().toString());
+      var domain = ch.so.agi.filegdb.catalog.DefinitionXml.domain(item.definition());
+      if (domain != null) {
+        domains.put(domain.name(), domain);
+        domainUuids.put(domain.name(), item.uuid().toString());
+      }
+    }
+  }
+
+  public GdbFeatureWriter appendFeatures(String name, boolean createSpatialIndex)
+      throws IOException {
+    var dataset = requireAppendable(name, true);
+    var writer = appendDataset(dataset, createSpatialIndex);
+    return new GdbFeatureWriter(dataset.name(), writer);
+  }
+
+  public GdbTableWriter appendRows(String name) throws IOException {
+    var dataset = requireAppendable(name, false);
+    return new GdbTableWriter(dataset.name(), appendDataset(dataset, false));
+  }
+
+  private TableFileWriter appendDataset(ch.so.agi.filegdb.catalog.Dataset dataset, boolean index)
+      throws IOException {
+    if (appended.contains(dataset.name()))
+      throw new IOException("Dataset already opened for append: " + dataset.name());
+    var indexPath = ch.so.agi.filegdb.index.SpatialIndex.path(dataset.tableFile());
+    if (Files.exists(indexPath))
+      try (var source = ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
+        ch.so.agi.filegdb.index.SpatialIndex.validate(
+            indexPath, source.geomField().geometry().spatialIndexGridResolution(), cancellation);
+      }
+    var writer =
+        TableFileWriter.append(
+            dataset.tableFile(),
+            index,
+            ch.so.agi.filegdb.catalog.DefinitionXml.fieldInfo(dataset.definition()),
+            cancellation);
+    writer.setCancellation(cancellation);
+    appended.add(dataset.name());
+    datasetWriters.add(writer);
+    return writer;
+  }
+
+  private ch.so.agi.filegdb.catalog.Dataset requireAppendable(String name, boolean geometry)
+      throws IOException {
+    if (closed) throw new IllegalStateException("File geodatabase is closed");
+    if (existingCatalog == null) throw new IOException("Append requires an edit session");
+    var dataset =
+        existingCatalog.datasets().stream()
+            .filter(d -> d.name().equalsIgnoreCase(name))
+            .findFirst()
+            .orElseThrow(() -> new IOException("Dataset does not exist: " + name));
+    if (dataset.isFeatureClass() != geometry) throw new IOException("Wrong dataset kind: " + name);
+    checkAppendSupport(existingCatalog, dataset, cancellation);
+    return dataset;
+  }
+
+  /** Checks unsupported editing semantics before any dataset changes. */
+  public static void checkAppendSupport(
+      ch.so.agi.filegdb.catalog.GdbCatalog catalog,
+      ch.so.agi.filegdb.catalog.Dataset dataset,
+      Runnable cancellation)
+      throws IOException {
+    cancellation.run();
+    rejectAttributeIndexes(dataset.tableFile());
+    String unsupported =
+        ch.so.agi.filegdb.catalog.DefinitionXml.unsupportedEditingReason(dataset.definition());
+    if (unsupported != null)
+      throw new IOException("Unsupported editing rules in " + dataset.name() + ": " + unsupported);
+    try (var table = ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
+      for (var field : table.fields()) {
+        if (field.type() == ch.so.agi.filegdb.table.FileGdbFieldType.GLOBALID
+            || (!field.editable()
+                && field.type() != ch.so.agi.filegdb.table.FileGdbFieldType.OBJECTID
+                && field.type() != ch.so.agi.filegdb.table.FileGdbFieldType.GEOMETRY))
+          throw new IOException(
+              "Unsupported automatic field: " + dataset.name() + "." + field.name());
+      }
+    }
+    for (var relationship : catalog.relationships()) {
+      if ((relationship.originClassName().equalsIgnoreCase(dataset.name())
+              || relationship.destinationClassName().equalsIgnoreCase(dataset.name()))
+          && (relationship.attributed()
+              || relationship.attachment()
+              || relationship.composite()
+              || relationship.cardinality()
+                  == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY))
+        throw new IOException("Unsupported complex relationship: " + relationship.name());
+    }
+  }
+
+  private static void rejectAttributeIndexes(Path table) throws IOException {
+    String prefix =
+        table.getFileName().toString().replace(".gdbtable", ".").toLowerCase(Locale.ROOT);
+    try (var files = Files.list(table.getParent())) {
+      if (files.anyMatch(
+          p ->
+              p.getFileName().toString().toLowerCase(Locale.ROOT).startsWith(prefix)
+                  && p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".atx")))
+        throw new IOException(
+            "Attribute indexes are unsupported for editing: " + table.getFileName());
+    }
+  }
+
+  private void checkCatalogWritable() throws IOException {
+    for (int number : new int[] {1, 3, 4, 6})
+      rejectAttributeIndexes(directory.resolve(GdbPaths.tableFileName(number)));
+    cancellation.run();
+  }
 
   private void checkName(String name) {
     if (name == null
@@ -129,7 +311,17 @@ public final class GdbCreator implements AutoCloseable {
           null);
   }
 
-  private ch.so.agi.filegdb.table.FileGdbFieldType keyType(String dataset, String name) {
+  private ch.so.agi.filegdb.table.FileGdbFieldType keyType(String dataset, String name)
+      throws IOException {
+    if (!datasetFields.containsKey(dataset) && existingCatalog != null) {
+      var d =
+          existingCatalog
+              .dataset(dataset)
+              .orElseThrow(() -> new IOException("Dataset missing: " + dataset));
+      try (var t = ch.so.agi.filegdb.table.FileGdbTableFile.open(d.tableFile())) {
+        datasetFields.put(dataset, t.fields());
+      }
+    }
     if ("OBJECTID".equals(name)) return ch.so.agi.filegdb.table.FileGdbFieldType.INT32;
     return datasetFields.get(dataset).stream()
         .filter(f -> f.name().equals(name))
@@ -196,10 +388,13 @@ public final class GdbCreator implements AutoCloseable {
     if (closed) {
       throw new IllegalStateException("File geodatabase is already closed");
     }
+    checkCatalogWritable();
     checkName(definition.name());
     checkFields(definition.fields(), definition.geometry().name());
     GeometryFieldDefinition geometry = definition.geometry();
     Path tableFile = directory.resolve(GdbPaths.tableFileName(nextTableNumber));
+    if (Files.exists(tableFile))
+      throw new IOException("Physical table already exists: " + tableFile);
     TableFileWriter table =
         TableFileWriter.create(tableFile, geometry.kind(), geometry.hasZ(), geometry.hasM());
     try {
@@ -246,6 +441,8 @@ public final class GdbCreator implements AutoCloseable {
       nextTableNumber++;
       datasetUuids.put(definition.name(), layerGuid);
       registerDataset(definition.name(), layerGuid, definition.fields());
+      table.setCancellation(cancellation);
+      datasetWriters.add(table);
       return new GdbFeatureWriter(definition.name(), table);
     } catch (Exception e) {
       table.close();
@@ -258,6 +455,18 @@ public final class GdbCreator implements AutoCloseable {
     if (closed) {
       throw new IllegalStateException("File geodatabase is already closed");
     }
+    if (existingCatalog != null) {
+      var old =
+          domains.values().stream()
+              .filter(d -> d.name().equalsIgnoreCase(domain.name()))
+              .findFirst();
+      if (old.isPresent()) {
+        if (!ch.so.agi.filegdb.catalog.DomainValues.equivalent(old.get(), domain))
+          throw new IOException("Conflicting existing domain: " + domain.name());
+        return;
+      }
+    }
+    checkCatalogWritable();
     checkName(domain.name());
     ch.so.agi.filegdb.catalog.DomainValues.validate(domain);
     boolean coded = domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain;
@@ -293,12 +502,33 @@ public final class GdbCreator implements AutoCloseable {
     if (closed) {
       throw new IllegalStateException("File geodatabase is already closed");
     }
+    if (existingCatalog != null) {
+      var old =
+          existingCatalog.relationships().stream()
+              .filter(r -> r.name().equalsIgnoreCase(definition.name()))
+              .findFirst();
+      if (old.isPresent()) {
+        var expected =
+            ch.so.agi.filegdb.catalog.DefinitionXml.relationship(
+                DefinitionXmlWriter.relationship(definition, 0, ""));
+        if (!old.get().equals(expected))
+          throw new IOException("Conflicting existing relationship: " + definition.name());
+        return;
+      }
+      if (definition.composite()
+          || definition.cardinality()
+              == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY)
+        throw new IOException("Only simple 1:1/1:n relationships can be added to existing GDBs");
+      if ("OBJECTID".equalsIgnoreCase(definition.originPrimaryKey()))
+        throw new IOException("New relationships must use explicit business keys, not OBJECTID");
+    }
+    checkCatalogWritable();
     checkName(definition.name());
     String originUuid = datasetUuids.get(definition.originClassName());
     String destinationUuid = datasetUuids.get(definition.destinationClassName());
     if (originUuid == null || destinationUuid == null) {
       throw new GdbException(
-          "Relationship classes can only reference datasets created in this session: "
+          "Relationship classes require existing or newly created datasets: "
               + definition.originClassName()
               + " -> "
               + definition.destinationClassName());
@@ -392,6 +622,8 @@ public final class GdbCreator implements AutoCloseable {
     checkName(name);
     checkFields(definition.fields(), null);
     Path tableFile = directory.resolve(GdbPaths.tableFileName(nextTableNumber));
+    if (Files.exists(tableFile))
+      throw new IOException("Physical table already exists: " + tableFile);
     TableFileWriter table = TableFileWriter.create(tableFile, GeometryKind.NONE, false, false);
     try {
       for (FileGdbField field : definition.fields()) {
@@ -427,10 +659,53 @@ public final class GdbCreator implements AutoCloseable {
       nextTableNumber++;
       datasetUuids.put(name, uuid);
       registerDataset(name, uuid, definition.fields());
+      table.setCancellation(cancellation);
+      datasetWriters.add(table);
       return new GdbTableWriter(name, table);
     } catch (Exception e) {
       table.close();
       throw e;
+    }
+  }
+
+  private void updateAppendedMetadata() throws IOException {
+    if (existingCatalog == null || appended.isEmpty()) return;
+    try (var source = ch.so.agi.filegdb.table.FileGdbTableFile.open(items.path())) {
+      var fields = source.fields();
+      int nameIndex = -1, definitionIndex = -1;
+      for (int i = 0; i < fields.size(); i++) {
+        if (fields.get(i).name().equals("Name")) nameIndex = i;
+        if (fields.get(i).name().equals("Definition")) definitionIndex = i;
+      }
+      for (long i = 0; i < source.totalRecordCount(); i++) {
+        cancellation.run();
+        Object[] row = source.readRow(i);
+        if (row == null || !appended.contains(row[nameIndex])) continue;
+        var dataset = existingCatalog.dataset((String) row[nameIndex]).orElseThrow();
+        if (!dataset.isFeatureClass()) continue;
+        var writer =
+            datasetWriters.stream()
+                .filter(w -> w.path().equals(dataset.tableFile()))
+                .findFirst()
+                .orElseThrow();
+        if (!writer.changed()) continue;
+        rejectAttributeIndexes(items.path());
+        try (var table = ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
+          row[definitionIndex] =
+              ch.so.agi.filegdb.catalog.DefinitionXml.withStorageExtent(
+                  (String) row[definitionIndex],
+                  table.geomField().geometry().extent(),
+                  Files.exists(ch.so.agi.filegdb.index.SpatialIndex.path(dataset.tableFile())));
+        }
+        var values = new java.util.ArrayList<Object>();
+        for (int f = 0; f < fields.size(); f++)
+          if (f != source.objectIdFieldIndex() && f != source.geomFieldIndex()) values.add(row[f]);
+        var geometry =
+            source.geomFieldIndex() < 0
+                ? null
+                : (ch.so.agi.filegdb.geometry.FileGdbGeometry) row[source.geomFieldIndex()];
+        items.replaceRow(i + 1, values.toArray(), geometry);
+      }
     }
   }
 
@@ -441,6 +716,19 @@ public final class GdbCreator implements AutoCloseable {
     }
     closed = true;
     IOException error = null;
+    for (var writer : datasetWriters) {
+      try {
+        writer.close();
+      } catch (IOException | RuntimeException e) {
+        error = new IOException("Cannot close dataset writer", e);
+      }
+    }
+    if (error == null)
+      try {
+        updateAppendedMetadata();
+      } catch (IOException | RuntimeException e) {
+        error = new IOException("Cannot update FileGDB metadata", e);
+      }
     for (TableFileWriter writer :
         List.of(
             itemRelationshipTypes,
@@ -452,8 +740,9 @@ public final class GdbCreator implements AutoCloseable {
             systemCatalog)) {
       try {
         writer.close();
-      } catch (IOException e) {
-        error = e;
+      } catch (IOException | RuntimeException e) {
+        if (error == null) error = new IOException("Cannot close FileGDB", e);
+        else error.addSuppressed(e);
       }
     }
     if (error != null) {

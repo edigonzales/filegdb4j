@@ -28,12 +28,11 @@ import java.util.UUID;
 /**
  * Read access to a {@code .gdbtable} file and its {@code .gdbtablx} row index.
  *
- * <p>Ported from GDAL OpenFileGDB ({@code filegdbtable.cpp}). The class exposes
- * the physical table; feature classes and tables are layered on top by the
- * catalog reader.
+ * <p>Ported from GDAL OpenFileGDB ({@code filegdbtable.cpp}). The class exposes the physical table;
+ * feature classes and tables are layered on top by the catalog reader.
  *
- * <p>Rows are decoded sequentially in field order. Random access to a single
- * field of a row is not offered because the row format has no random access.
+ * <p>Rows are decoded sequentially in field order. Random access to a single field of a row is not
+ * offered because the row format has no random access.
  */
 public final class FileGdbTableFile implements AutoCloseable {
 
@@ -66,6 +65,26 @@ public final class FileGdbTableFile implements AutoCloseable {
   private final int tableXOffsetSize;
   private final byte[] blockMap;
   private final boolean reliableObjectIds;
+  private long extentOffset = -1, gridOffset = -1;
+
+  /** Physical layout needed to append without rewriting existing field definitions. */
+  public record WriteLayout(
+      int version,
+      long descriptorOffset,
+      int offsetWidth,
+      byte[] blockMap,
+      long extentOffset,
+      long gridOffset) {}
+
+  public WriteLayout writeLayout() {
+    return new WriteLayout(
+        version,
+        offsetFieldDesc,
+        tableXOffsetSize,
+        blockMap == null ? null : blockMap.clone(),
+        extentOffset,
+        gridOffset);
+  }
 
   private FileGdbTableFile(Path path, FileChannel table, Map<String, FieldMetadata> metadata)
       throws IOException {
@@ -97,7 +116,7 @@ public final class FileGdbTableFile implements AutoCloseable {
     int offsetSize = 0;
     byte[] blocks = null;
     boolean reliable = true;
-    if (validRecords > 0) {
+    if (Files.isRegularFile(ch.so.agi.filegdb.io.GdbPaths.companion(path, "gdbtablx"))) {
       Path tableXPath = GdbPaths.companion(path, "gdbtablx");
       if (!Files.isRegularFile(tableXPath)) {
         throw new GdbException(
@@ -139,8 +158,7 @@ public final class FileGdbTableFile implements AutoCloseable {
     this.hasZ = (geometryFlags & (1 << 7)) != 0;
     int fieldCount = u16(descriptorHeader, 12);
 
-    byte[] descriptor =
-        readFully(table, offsetFieldDesc + 14, Math.max(0, descriptorLength - 10));
+    byte[] descriptor = readFully(table, offsetFieldDesc + 14, Math.max(0, descriptorLength - 10));
     FieldParseResult parsed = parseFields(descriptor, fieldCount, metadata);
     this.fields = parsed.fields();
     this.geomField = parsed.geomField();
@@ -155,9 +173,8 @@ public final class FileGdbTableFile implements AutoCloseable {
   }
 
   /**
-   * Opens a table with catalog metadata for fields. The metadata supplies the
-   * assigned domain and the high precision flag, which are not part of the
-   * binary table header.
+   * Opens a table with catalog metadata for fields. The metadata supplies the assigned domain and
+   * the high precision flag, which are not part of the binary table header.
    */
   public static FileGdbTableFile open(Path path, Map<String, FieldMetadata> metadata)
       throws IOException {
@@ -234,12 +251,11 @@ public final class FileGdbTableFile implements AutoCloseable {
   /**
    * Reads a row and decodes all field values.
    *
-   * <p>Values use the following Java types: {@code Long} for the object id and
-   * integer fields, {@code Double} for real fields, {@code String} for string
-   * and XML fields, {@code LocalDateTime}/{@code LocalDate}/{@code LocalTime}/
-   * {@code OffsetDateTime} for date and time fields, {@code UUID} for GUID
-   * fields, {@code byte[]} for binary fields and {@link FileGdbGeometry} for
-   * geometry fields.
+   * <p>Values use the following Java types: {@code Long} for the object id and integer fields,
+   * {@code Double} for real fields, {@code String} for string and XML fields, {@code
+   * LocalDateTime}/{@code LocalDate}/{@code LocalTime}/ {@code OffsetDateTime} for date and time
+   * fields, {@code UUID} for GUID fields, {@code byte[]} for binary fields and {@link
+   * FileGdbGeometry} for geometry fields.
    *
    * @return the decoded values or {@code null} if the row is deleted or empty
    */
@@ -437,9 +453,10 @@ public final class FileGdbTableFile implements AutoCloseable {
             defaultValueLength = cursor.u8();
           }
         }
-        if ((flags & FLAG_EDITABLE) != 0 && defaultValueLength > 0) {
-          cursor.skip(defaultValueLength);
-        }
+        byte[] defaultBytes =
+            (flags & FLAG_EDITABLE) != 0 && defaultValueLength > 0
+                ? cursor.bytes(defaultValueLength)
+                : null;
         if (type == FileGdbFieldType.OBJECTID) {
           if (flags != FLAG_REQUIRED) {
             throw new GdbException("Object id field with unexpected flags: " + flags);
@@ -454,7 +471,7 @@ public final class FileGdbTableFile implements AutoCloseable {
           parsedNullableCount++;
         }
         FieldMetadata fieldMetadata = metadata.getOrDefault(name, FieldMetadata.EMPTY);
-        parsedFields.add(
+        FileGdbField parsedField =
             new FileGdbField(
                 name,
                 alias,
@@ -464,7 +481,19 @@ public final class FileGdbTableFile implements AutoCloseable {
                 (flags & FLAG_EDITABLE) != 0,
                 maxWidth,
                 fieldMetadata.highPrecision(),
-                fieldMetadata.domain()));
+                fieldMetadata.domain());
+        if (defaultBytes != null) {
+          Object value =
+              type == FileGdbFieldType.STRING
+                  ? new String(
+                      defaultBytes,
+                      stringsUtf8
+                          ? java.nio.charset.StandardCharsets.UTF_8
+                          : java.nio.charset.StandardCharsets.UTF_16LE)
+                  : readValue(new ByteCursor(defaultBytes), parsedField, 0);
+          parsedField = parsedField.withDefaultValue(value);
+        }
+        parsedFields.add(parsedField);
         continue;
       }
 
@@ -519,6 +548,7 @@ public final class FileGdbTableFile implements AutoCloseable {
         zTolerance = cursor.f64();
       }
 
+      extentOffset = offsetFieldDesc + 14 + cursor.position();
       double xMin = cursor.f64();
       double yMin = cursor.f64();
       double xMax = cursor.f64();
@@ -536,6 +566,7 @@ public final class FileGdbTableFile implements AutoCloseable {
       if (gridCount == 0 || gridCount > 3) {
         throw new GdbException("Invalid spatial index grid count: " + gridCount);
       }
+      gridOffset = offsetFieldDesc + 14 + cursor.position();
       List<Double> gridResolution = new ArrayList<>((int) gridCount);
       for (int g = 0; g < gridCount; g++) {
         gridResolution.add(cursor.f64());
@@ -543,7 +574,15 @@ public final class FileGdbTableFile implements AutoCloseable {
 
       CoordinatePrecision precision =
           new CoordinatePrecision(
-              xOrigin, yOrigin, xyScale, xyTolerance, zOrigin, zScale, zTolerance, mOrigin, mScale,
+              xOrigin,
+              yOrigin,
+              xyScale,
+              xyTolerance,
+              zOrigin,
+              zScale,
+              zTolerance,
+              mOrigin,
+              mScale,
               mTolerance);
       GeometryFieldDefinition definition =
           new GeometryFieldDefinition(
@@ -557,8 +596,7 @@ public final class FileGdbTableFile implements AutoCloseable {
               precision,
               new Envelope(xMin, yMin, xMax, yMax),
               gridResolution);
-      parsedGeomField =
-          new FileGdbGeomField(name, alias, nullable, wkt, definition);
+      parsedGeomField = new FileGdbGeomField(name, alias, nullable, wkt, definition);
       FieldMetadata fieldMetadata = metadata.getOrDefault(name, FieldMetadata.EMPTY);
       parsedFields.add(
           new FileGdbField(
@@ -588,8 +626,7 @@ public final class FileGdbTableFile implements AutoCloseable {
     return cursor.utf16(characterCount);
   }
 
-  private static TableXHeader readTableXHeader(FileChannel tableX, int version)
-      throws IOException {
+  private static TableXHeader readTableXHeader(FileChannel tableX, int version) throws IOException {
     byte[] header = readFully(tableX, 0, 16);
     long headerVersion = u32(header, 0);
     if (headerVersion != version) {

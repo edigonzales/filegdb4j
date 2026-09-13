@@ -38,10 +38,15 @@ public final class SpatialIndex {
 
   /** Builds a v1 index at close, using bounded sorted runs rather than retaining geometries. */
   public static double build(Path tablePath) throws IOException {
+    return build(tablePath, () -> {});
+  }
+
+  public static double build(Path tablePath, Runnable cancellation) throws IOException {
     double grid = 1, span = 0, maxAbs = 0;
     long count = 0;
     try (var table = FileGdbTableFile.open(tablePath)) {
       for (long i = 0; i < table.totalRecordCount(); i++) {
+        cancellation.run();
         Object[] row = table.readRow(i);
         if (row == null) continue;
         Envelope e = GeometryBounds.of((FileGdbGeometry) row[table.geomFieldIndex()]);
@@ -72,6 +77,7 @@ public final class SpatialIndex {
       List<Entry> entries = new ArrayList<>();
       try (var table = FileGdbTableFile.open(tablePath)) {
         for (long i = 0; i < table.totalRecordCount(); i++) {
+          cancellation.run();
           Object[] row = table.readRow(i);
           if (row == null) continue;
           Envelope e = GeometryBounds.of((FileGdbGeometry) row[table.geomFieldIndex()]);
@@ -88,11 +94,12 @@ public final class SpatialIndex {
       if (!entries.isEmpty() || runs.isEmpty()) runs.add(spill(work, entries, runs.size()));
       int generation = 0;
       while (runs.size() > 64) {
+        cancellation.run();
         List<Path> merged = new ArrayList<>();
         for (int start = 0; start < runs.size(); start += 64) {
           var batch = runs.subList(start, Math.min(start + 64, runs.size()));
           Path target = work.resolve("merge-" + generation + "-" + start);
-          merge(batch, target);
+          merge(batch, target, cancellation);
           merged.add(target);
           for (Path old : batch) Files.delete(old);
         }
@@ -100,9 +107,9 @@ public final class SpatialIndex {
         generation++;
       }
       Path sorted = work.resolve("sorted");
-      long total = merge(runs, sorted);
+      long total = merge(runs, sorted, cancellation);
       if (total > Integer.MAX_VALUE) throw new IOException("Spatial index exceeds v1 entry limit");
-      writePages(sorted, total, path(tablePath));
+      writePages(sorted, total, path(tablePath), cancellation);
       return grid;
     } finally {
       try (var files = Files.walk(work)) {
@@ -125,7 +132,8 @@ public final class SpatialIndex {
 
   private record Head(Entry entry, int run) {}
 
-  private static long merge(List<Path> runs, Path target) throws IOException {
+  private static long merge(List<Path> runs, Path target, Runnable cancellation)
+      throws IOException {
     List<DataInputStream> streams = new ArrayList<>();
     var queue = new PriorityQueue<Head>(Comparator.comparing(Head::entry));
     long count = 0;
@@ -137,6 +145,7 @@ public final class SpatialIndex {
         if (e != null) queue.add(new Head(e, streams.size() - 1));
       }
       while (!queue.isEmpty()) {
+        cancellation.run();
         Head h = queue.remove();
         out.writeLong(h.entry.key);
         out.writeLong(h.entry.id);
@@ -170,7 +179,8 @@ public final class SpatialIndex {
     }
   }
 
-  private static void writePages(Path sorted, long total, Path output) throws IOException {
+  private static void writePages(Path sorted, long total, Path output, Runnable cancellation)
+      throws IOException {
     try (var data = new RandomAccessFile(sorted.toFile(), "r");
         var out = new RandomAccessFile(output.toFile(), "rw")) {
       out.setLength(0);
@@ -205,6 +215,7 @@ public final class SpatialIndex {
         if (n.children != null) all.addAll(n.children);
       }
       for (int ni = 0; ni < all.size(); ni++) {
+        cancellation.run();
         Node n = all.get(ni);
         ByteBuffer b = page(PAGE);
         if (n.children == null) {
@@ -241,6 +252,16 @@ public final class SpatialIndex {
   /** Returns candidate object IDs; consumers must apply their final geometric predicate. */
   public static SortedSet<Long> candidates(Path index, List<Double> grids, Envelope filter)
       throws IOException {
+    return scan(index, grids, filter, () -> {});
+  }
+
+  public static void validate(Path index, List<Double> grids, Runnable cancellation)
+      throws IOException {
+    scan(index, grids, null, cancellation);
+  }
+
+  private static SortedSet<Long> scan(
+      Path index, List<Double> grids, Envelope filter, Runnable cancellation) throws IOException {
     try (var in = new RandomAccessFile(index.toFile(), "r")) {
       if (in.length() < 22) throw new IOException("Truncated spatial index");
       in.seek(in.length() - 4);
@@ -268,7 +289,8 @@ public final class SpatialIndex {
           grids,
           filter,
           result,
-          new HashSet<>());
+          new HashSet<>(),
+          cancellation);
       return result;
     }
   }
@@ -296,8 +318,10 @@ public final class SpatialIndex {
       List<Double> grids,
       Envelope f,
       SortedSet<Long> result,
-      Set<Long> visited)
+      Set<Long> visited,
+      Runnable cancellation)
       throws IOException {
+    cancellation.run();
     if (id < 1 || id > pages || !visited.add(id))
       throw new IOException("Invalid or cyclic SPX page reference");
     byte[] raw = new byte[size];
@@ -312,13 +336,13 @@ public final class SpatialIndex {
     if (n < 0 || n > cap) throw new IOException("Invalid SPX page count");
     if (depth == 1) {
       for (int i = 0; i < n; i++)
-        if (cellIntersects(b.getLong(valueOffset + i * 8), grids, f)) {
+        if (f == null || cellIntersects(b.getLong(valueOffset + i * 8), grids, f)) {
           long feature =
               oid == 4
                   ? Integer.toUnsignedLong(b.getInt(header + i * oid))
                   : b.getLong(header + i * oid);
           if (feature < 1) throw new IOException("Invalid SPX object ID");
-          result.add(feature);
+          if (f != null) result.add(feature);
         }
     } else {
       if (n == 0) throw new IOException("Empty non-leaf SPX page");
@@ -332,7 +356,7 @@ public final class SpatialIndex {
         if (child == 0 && n == 1 && i == 1) continue;
         long low = i == 0 ? Long.MIN_VALUE : b.getLong(valueOffset + (i - 1) * 8);
         long high = i == n ? Long.MAX_VALUE : b.getLong(valueOffset + i * 8);
-        if (grids.size() == 1) {
+        if (f != null && grids.size() == 1) {
           double step = grids.getFirst();
           long xmin = Math.max(0, cell(f.xMin(), step)),
               xmax = Math.min(0x7fffffffL, cell(f.xMax(), step));
@@ -343,7 +367,8 @@ public final class SpatialIndex {
               || high < ((xmin << 31) | ymin)
               || low > ((xmax << 31) | ymax)) continue;
         }
-        readNode(in, child, depth - 1, version, size, pages, grids, f, result, visited);
+        readNode(
+            in, child, depth - 1, version, size, pages, grids, f, result, visited, cancellation);
       }
     }
   }

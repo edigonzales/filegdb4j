@@ -38,6 +38,25 @@ public final class DomainValues {
     return a.compareTo(b);
   }
 
+  public static boolean equivalent(Domain a, Domain b) {
+    validate(a);
+    validate(b);
+    if (a.getClass() != b.getClass()
+        || !a.name().equalsIgnoreCase(b.name())
+        || a.fieldType() != b.fieldType()
+        || !java.util.Objects.equals(a.description(), b.description())
+        || a.splitPolicy() != b.splitPolicy()
+        || a.mergePolicy() != b.mergePolicy()) return false;
+    if (a instanceof RangeDomain x && b instanceof RangeDomain y)
+      return parse(a.fieldType(), x.minValue()).equals(parse(b.fieldType(), y.minValue()))
+          && parse(a.fieldType(), x.maxValue()).equals(parse(b.fieldType(), y.maxValue()));
+    var x = new java.util.HashMap<Comparable<?>, String>();
+    var y = new java.util.HashMap<Comparable<?>, String>();
+    for (var v : a.values()) x.put(parse(a.fieldType(), v.code()), v.name());
+    for (var v : b.values()) y.put(parse(b.fieldType(), v.code()), v.name());
+    return x.equals(y);
+  }
+
   public static void validate(Domain domain) {
     if (domain.fieldType() == null
         || !java.util.Set.of(
