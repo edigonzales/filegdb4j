@@ -233,13 +233,12 @@ public final class GdbCreator implements AutoCloseable {
       }
     }
     for (ch.so.agi.filegdb.catalog.RelationshipClass relationship : catalog.relationships()) {
+      // attributed n:m relationships are supported when appending rows: their mapping table is an
+      // ordinary table of the geodatabase. Attachment and composite relationships imply editing
+      // rules that are not maintained by the append writer.
       if ((relationship.originClassName().equalsIgnoreCase(dataset.name())
               || relationship.destinationClassName().equalsIgnoreCase(dataset.name()))
-          && (relationship.attributed()
-              || relationship.attachment()
-              || relationship.composite()
-              || relationship.cardinality()
-                  == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY))
+          && (relationship.attachment() || relationship.composite()))
         throw new IOException("Unsupported complex relationship: " + relationship.name());
     }
   }
@@ -504,6 +503,13 @@ public final class GdbCreator implements AutoCloseable {
     names.add(domain.name().toLowerCase(Locale.ROOT));
   }
 
+  private static String mappingTableOidName(RelationshipDefinition definition) {
+    return definition.cardinality()
+            == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY
+        ? "OBJECTID"
+        : "";
+  }
+
   /** Creates a relationship class item in the catalog. */
   public void createRelationship(RelationshipDefinition definition) throws IOException {
     if (closed) {
@@ -517,20 +523,25 @@ public final class GdbCreator implements AutoCloseable {
       if (old.isPresent()) {
         ch.so.agi.filegdb.catalog.RelationshipClass expected =
             ch.so.agi.filegdb.catalog.DefinitionXml.relationship(
-                DefinitionXmlWriter.relationship(definition, 0, ""));
+                DefinitionXmlWriter.relationship(definition, 0, mappingTableOidName(definition)));
         if (!old.get().equals(expected))
           throw new IOException("Conflicting existing relationship: " + definition.name());
         return;
       }
       if (definition.composite()
-          || definition.cardinality()
-              == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY)
-        throw new IOException("Only simple 1:1/1:n relationships can be added to existing GDBs");
+          || (definition.cardinality()
+                  == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY
+              && definition.mappingTable() == null))
+        throw new IOException(
+            "Only simple 1:1/1:n relationships can be added to existing GDBs");
       if ("OBJECTID".equalsIgnoreCase(definition.originPrimaryKey()))
         throw new IOException("New relationships must use explicit business keys, not OBJECTID");
     }
     checkCatalogWritable();
-    checkName(definition.name());
+    if (definition.mappingTable() == null) {
+      // a relationship over an existing mapping table intentionally shares its name
+      checkName(definition.name());
+    }
     String originUuid = datasetUuids.get(definition.originClassName());
     String destinationUuid = datasetUuids.get(definition.destinationClassName());
     if (originUuid == null || destinationUuid == null) {
@@ -565,16 +576,24 @@ public final class GdbCreator implements AutoCloseable {
       if (originType != targetType && !guids)
         throw new IllegalArgumentException("Incompatible relationship key types");
     }
-    String mappingTableOidName = "";
+    String mappingTableOidName = mappingTableOidName(definition);
     if (definition.cardinality()
         == ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
-      mappingTableOidName = "OBJECTID";
-      createTable(
-              TableDefinition.builder(definition.name())
-                  .field(FileGdbField.string(definition.originForeignKey(), 255).asNullable())
-                  .field(FileGdbField.string(definition.destinationForeignKey(), 255).asNullable())
-                  .build())
-          .close();
+      if (definition.mappingTable() != null) {
+        // relationship over an existing mapping table (for example the association table of ili2db)
+        if (datasetUuids.get(definition.mappingTable()) == null) {
+          throw new GdbException("Mapping table does not exist: " + definition.mappingTable());
+        }
+        keyType(definition.mappingTable(), definition.originForeignKey());
+        keyType(definition.mappingTable(), definition.destinationForeignKey());
+      } else {
+        createTable(
+                TableDefinition.builder(definition.name())
+                    .field(FileGdbField.string(definition.originForeignKey(), 255).asNullable())
+                    .field(FileGdbField.string(definition.destinationForeignKey(), 255).asNullable())
+                    .build())
+            .close();
+      }
     }
 
     String xml =

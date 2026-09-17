@@ -28,6 +28,8 @@ public final class RelationshipDefinition {
   private final String forwardLabel;
   private final String backwardLabel;
   private final boolean composite;
+  private final String mappingTable;
+  private final boolean attributed;
 
   public RelationshipDefinition(
       String name,
@@ -41,6 +43,45 @@ public final class RelationshipDefinition {
       String forwardLabel,
       String backwardLabel,
       boolean composite) {
+    this(
+        name,
+        originClassName,
+        destinationClassName,
+        cardinality,
+        originPrimaryKey,
+        originForeignKey,
+        destinationPrimaryKey,
+        destinationForeignKey,
+        forwardLabel,
+        backwardLabel,
+        composite,
+        null,
+        false);
+  }
+
+  /**
+   * Creates a relationship definition.
+   *
+   * @param mappingTable existing table used as n:m mapping table; when set, no mapping table is
+   *     created and the relationship name must equal the table name (as expected by GDAL/ArcGIS)
+   * @param attributed whether the relationship class is attributed (n:m with attributes)
+   */
+  public RelationshipDefinition(
+      String name,
+      String originClassName,
+      String destinationClassName,
+      RelationshipCardinality cardinality,
+      String originPrimaryKey,
+      String originForeignKey,
+      String destinationPrimaryKey,
+      String destinationForeignKey,
+      String forwardLabel,
+      String backwardLabel,
+      boolean composite,
+      String mappingTable,
+      boolean attributed) {
+    this.mappingTable = mappingTable;
+    this.attributed = attributed;
     this.name = name;
     this.originClassName = originClassName;
     this.destinationClassName = destinationClassName;
@@ -98,6 +139,16 @@ public final class RelationshipDefinition {
     return composite;
   }
 
+  /** Existing table used as n:m mapping table, or null when filegdb4j creates it. */
+  public String mappingTable() {
+    return mappingTable;
+  }
+
+  /** Whether the relationship class is attributed (n:m with attribute columns). */
+  public boolean attributed() {
+    return attributed;
+  }
+
   public static Builder builder(String name) {
     return new Builder(name);
   }
@@ -112,6 +163,8 @@ public final class RelationshipDefinition {
     }
     RelationshipDefinition other = (RelationshipDefinition) o;
     return composite == other.composite
+        && attributed == other.attributed
+        && Objects.equals(mappingTable, other.mappingTable)
         && Objects.equals(name, other.name)
         && Objects.equals(originClassName, other.originClassName)
         && Objects.equals(destinationClassName, other.destinationClassName)
@@ -138,6 +191,8 @@ public final class RelationshipDefinition {
     result = 31 * result + Objects.hashCode(forwardLabel);
     result = 31 * result + Objects.hashCode(backwardLabel);
     result = 31 * result + Boolean.hashCode(composite);
+    result = 31 * result + Objects.hashCode(mappingTable);
+    result = 31 * result + Boolean.hashCode(attributed);
     return result;
   }
 
@@ -165,6 +220,10 @@ public final class RelationshipDefinition {
         + backwardLabel
         + ", composite="
         + composite
+        + ", mappingTable="
+        + mappingTable
+        + ", attributed="
+        + attributed
         + "]";
   }
 
@@ -181,6 +240,8 @@ public final class RelationshipDefinition {
     private String forwardLabel = "";
     private String backwardLabel = "";
     private boolean composite;
+    private String mappingTable;
+    private boolean attributed;
 
     private Builder(String name) {
       this.name = name;
@@ -237,6 +298,21 @@ public final class RelationshipDefinition {
       return this;
     }
 
+    /**
+     * Uses an existing table as n:m mapping table instead of creating one. The relationship name
+     * must equal the table name.
+     */
+    public Builder mappingTable(String mappingTable) {
+      this.mappingTable = mappingTable;
+      return this;
+    }
+
+    /** Marks the relationship class as attributed (n:m with attribute columns). */
+    public Builder attributed(boolean attributed) {
+      this.attributed = attributed;
+      return this;
+    }
+
     public RelationshipDefinition build() {
       if (name == null || name.trim().isEmpty()) {
         throw new IllegalArgumentException("Relationship name is required");
@@ -258,6 +334,21 @@ public final class RelationshipDefinition {
       } else if (originForeignKey == null || originForeignKey.trim().isEmpty()) {
         throw new IllegalArgumentException("Origin foreign key is required");
       }
+      if (mappingTable != null) {
+        if (cardinality != RelationshipCardinality.MANY_TO_MANY) {
+          throw new IllegalArgumentException("A mapping table is only supported for n:m relationships");
+        }
+        if (mappingTable.trim().isEmpty()) {
+          throw new IllegalArgumentException("Mapping table name is empty");
+        }
+        if (!name.equalsIgnoreCase(mappingTable)) {
+          throw new IllegalArgumentException(
+              "The relationship name must equal the mapping table name: " + name + " != " + mappingTable);
+        }
+      }
+      if (attributed && mappingTable == null) {
+        throw new IllegalArgumentException("Attributed relationships require a mapping table");
+      }
       return new RelationshipDefinition(
           name,
           originClassName,
@@ -269,7 +360,9 @@ public final class RelationshipDefinition {
           destinationForeignKey == null ? "" : destinationForeignKey,
           forwardLabel,
           backwardLabel,
-          composite);
+          composite,
+          mappingTable,
+          attributed);
     }
   }
 }

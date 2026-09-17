@@ -252,7 +252,7 @@ final class DefinitionXmlWriter {
     element(xml, 1, "IsTimeInUTC", "true");
     element(xml, 1, "Cardinality", cardinality(definition.cardinality()));
     element(xml, 1, "Notification", "esriRelNotificationNone");
-    element(xml, 1, "IsAttributed", "false");
+    element(xml, 1, "IsAttributed", definition.attributed() ? "true" : "false");
     element(xml, 1, "IsComposite", definition.composite() ? "true" : "false");
     xml.append("  <OriginClassNames xsi:type=\"typens:Names\">\n");
     element(xml, 2, "Name", definition.originClassName());
