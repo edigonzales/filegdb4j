@@ -74,6 +74,16 @@ public final class FileGeodatabase implements AutoCloseable {
     return FileGdbEditSession.open(directory, false, () -> {});
   }
 
+  /**
+   * Opens an existing geodatabase for writing (append, update, delete).
+   *
+   * <p>The caller must close the database before other applications access it.
+   */
+  public static FileGeodatabase openWritable(Path directory) throws IOException {
+    Path normalized = directory.toAbsolutePath().normalize();
+    return openWritable(normalized, () -> {});
+  }
+
   static FileGeodatabase openWritable(Path directory, Runnable cancellation) throws IOException {
     return new FileGeodatabase(
         directory, GdbCatalog.open(directory), GdbCreator.openExisting(directory, cancellation));
