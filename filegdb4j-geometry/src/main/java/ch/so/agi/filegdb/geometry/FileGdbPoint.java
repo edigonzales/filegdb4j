@@ -5,10 +5,13 @@ import java.util.Objects;
 /**
  * Point with optional Z and M ordinates.
  *
- * @param x x ordinate, NaN if encoded as absent
- * @param y y ordinate, NaN if encoded as absent
- * @param z z ordinate or {@code null}
- * @param m measure or {@code null}
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code x}: x ordinate, NaN if encoded as absent</li>
+ *   <li>{@code y}: y ordinate, NaN if encoded as absent</li>
+ *   <li>{@code z}: z ordinate or {@code null}</li>
+ *   <li>{@code m}: measure or {@code null}</li>
+ * </ul>
  */
 public final class FileGdbPoint implements FileGdbGeometry {
   private final double x;

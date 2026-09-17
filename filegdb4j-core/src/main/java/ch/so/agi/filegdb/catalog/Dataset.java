@@ -6,12 +6,15 @@ import java.util.Objects;
 /**
  * Dataset metadata from the geodatabase catalog.
  *
- * @param name dataset name
- * @param kind feature class or plain table
- * @param tableNumber one based physical table number in the system catalog
- * @param tableFile physical {@code .gdbtable} file
- * @param definition catalog definition XML
- * @param crs spatial reference declared in the definition XML
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code name}: dataset name</li>
+ *   <li>{@code kind}: feature class or plain table</li>
+ *   <li>{@code tableNumber}: one based physical table number in the system catalog</li>
+ *   <li>{@code tableFile}: physical {@code .gdbtable} file</li>
+ *   <li>{@code definition}: catalog definition XML</li>
+ *   <li>{@code crs}: spatial reference declared in the definition XML</li>
+ * </ul>
  */
 public final class Dataset {
   private final String name;

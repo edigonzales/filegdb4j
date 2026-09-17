@@ -5,9 +5,12 @@ import java.util.Objects;
 /**
  * Spatial reference of a dataset as declared in its catalog definition XML.
  *
- * @param wkid well known id from the {@code WKID} element, zero if absent
- * @param latestWkid newer well known id from {@code LatestWKID}, null if absent
- * @param wkt WKT text from the {@code WKT} element, empty if absent
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code wkid}: well known id from the {@code WKID} element, zero if absent</li>
+ *   <li>{@code latestWkid}: newer well known id from {@code LatestWKID}, null if absent</li>
+ *   <li>{@code wkt}: WKT text from the {@code WKT} element, empty if absent</li>
+ * </ul>
  */
 public final class CrsDefinition {
   private final int wkid;

@@ -8,16 +8,19 @@ import java.util.Objects;
 /**
  * Definition of the geometry field of a feature class.
  *
- * @param name field name
- * @param alias field alias
- * @param nullable whether null geometries are allowed
- * @param wkt spatial reference as WKT, may be empty
- * @param kind table geometry kind from the table header
- * @param hasZ whether coordinates carry a Z value
- * @param hasM whether coordinates carry a measure value
- * @param precision integer coordinate handling
- * @param extent feature extent declared in the table header, may be null
- * @param spatialIndexGridResolution spatial index grid sizes, may be empty
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code name}: field name</li>
+ *   <li>{@code alias}: field alias</li>
+ *   <li>{@code nullable}: whether null geometries are allowed</li>
+ *   <li>{@code wkt}: spatial reference as WKT, may be empty</li>
+ *   <li>{@code kind}: table geometry kind from the table header</li>
+ *   <li>{@code hasZ}: whether coordinates carry a Z value</li>
+ *   <li>{@code hasM}: whether coordinates carry a measure value</li>
+ *   <li>{@code precision}: integer coordinate handling</li>
+ *   <li>{@code extent}: feature extent declared in the table header, may be null</li>
+ *   <li>{@code spatialIndexGridResolution}: spatial index grid sizes, may be empty</li>
+ * </ul>
  */
 public final class GeometryFieldDefinition {
   private final String name;

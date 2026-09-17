@@ -4,14 +4,17 @@ package ch.so.agi.filegdb.geometry;
  * Ellipse segment between the point at {@code startPointIndex} and the
  * following point.
  *
- * @param startPointIndex index of the start point in the part
- * @param centerX x of the ellipse center
- * @param centerY y of the ellipse center
- * @param rotationDegrees rotation of the semi major axis in degrees
- * @param semiMajor semi major axis length
- * @param minorMajorRatio ratio of the semi minor to the semi major axis
- * @param minor whether the minor arc is used
- * @param complete whether the ellipse is complete
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code startPointIndex}: index of the start point in the part</li>
+ *   <li>{@code centerX}: x of the ellipse center</li>
+ *   <li>{@code centerY}: y of the ellipse center</li>
+ *   <li>{@code rotationDegrees}: rotation of the semi major axis in degrees</li>
+ *   <li>{@code semiMajor}: semi major axis length</li>
+ *   <li>{@code minorMajorRatio}: ratio of the semi minor to the semi major axis</li>
+ *   <li>{@code minor}: whether the minor arc is used</li>
+ *   <li>{@code complete}: whether the ellipse is complete</li>
+ * </ul>
  */
 public final class EllipseSegment implements FileGdbSegment {
   private final int startPointIndex;

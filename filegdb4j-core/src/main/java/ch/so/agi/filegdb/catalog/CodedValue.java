@@ -5,8 +5,11 @@ import java.util.Objects;
 /**
  * One name/code pair of a coded value domain.
  *
- * @param name display name
- * @param code stored code as text
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code name}: display name</li>
+ *   <li>{@code code}: stored code as text</li>
+ * </ul>
  */
 public final class CodedValue {
   private final String name;

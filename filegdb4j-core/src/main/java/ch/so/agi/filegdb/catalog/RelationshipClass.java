@@ -8,17 +8,20 @@ import java.util.Objects;
 /**
  * Relationship class declared in the geodatabase catalog.
  *
- * @param name relationship class name
- * @param originClassName origin class name
- * @param destinationClassName destination class name
- * @param cardinality relationship cardinality
- * @param forwardLabel forward path label
- * @param backwardLabel backward path label
- * @param composite whether the relationship is composite
- * @param attributed whether the relationship carries attributes
- * @param attachment whether this is an attachment relationship
- * @param originKeys keys in the origin class
- * @param destinationKeys keys in the destination class
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code name}: relationship class name</li>
+ *   <li>{@code originClassName}: origin class name</li>
+ *   <li>{@code destinationClassName}: destination class name</li>
+ *   <li>{@code cardinality}: relationship cardinality</li>
+ *   <li>{@code forwardLabel}: forward path label</li>
+ *   <li>{@code backwardLabel}: backward path label</li>
+ *   <li>{@code composite}: whether the relationship is composite</li>
+ *   <li>{@code attributed}: whether the relationship carries attributes</li>
+ *   <li>{@code attachment}: whether this is an attachment relationship</li>
+ *   <li>{@code originKeys}: keys in the origin class</li>
+ *   <li>{@code destinationKeys}: keys in the destination class</li>
+ * </ul>
  */
 public final class RelationshipClass {
   private final String name;

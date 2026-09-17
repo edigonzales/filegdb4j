@@ -6,8 +6,11 @@ import java.util.Objects;
  * Field metadata that lives in the catalog definition XML rather than in the
  * binary table header.
  *
- * @param domain name of the assigned domain, may be null
- * @param highPrecision whether datetime values keep sub second precision
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code domain}: name of the assigned domain, may be null</li>
+ *   <li>{@code highPrecision}: whether datetime values keep sub second precision</li>
+ * </ul>
  */
 public final class FieldMetadata {
   private final String domain;

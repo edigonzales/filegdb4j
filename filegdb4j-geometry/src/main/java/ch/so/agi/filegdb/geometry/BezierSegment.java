@@ -4,11 +4,14 @@ package ch.so.agi.filegdb.geometry;
  * Cubic Bezier segment between the point at {@code startPointIndex} and the
  * following point.
  *
- * @param startPointIndex index of the start point in the part
- * @param controlX1 x of the first control point
- * @param controlY1 y of the first control point
- * @param controlX2 x of the second control point
- * @param controlY2 y of the second control point
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code startPointIndex}: index of the start point in the part</li>
+ *   <li>{@code controlX1}: x of the first control point</li>
+ *   <li>{@code controlY1}: y of the first control point</li>
+ *   <li>{@code controlX2}: x of the second control point</li>
+ *   <li>{@code controlY2}: y of the second control point</li>
+ * </ul>
  */
 public final class BezierSegment implements FileGdbSegment {
   private final int startPointIndex;

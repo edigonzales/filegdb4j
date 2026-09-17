@@ -5,9 +5,11 @@ import java.util.Objects;
 /**
  * Key of a relationship class.
  *
- * @param objectKeyName field name in the origin or destination class or in the
- *     relationship table
- * @param role key role
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code objectKeyName}: field name in the origin or destination class or in the relationship table</li>
+ *   <li>{@code role}: key role</li>
+ * </ul>
  */
 public final class RelationshipKey {
   private final String objectKeyName;

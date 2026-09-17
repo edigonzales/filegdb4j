@@ -6,13 +6,16 @@ import java.util.UUID;
 /**
  * One row of the {@code GDB_Items} catalog table.
  *
- * @param uuid catalog item UUID
- * @param type item type UUID as string
- * @param name item name
- * @param path catalog path of the item
- * @param definition definition XML
- * @param documentation documentation XML
- * @param tableNumber physical table number resolved through the system catalog, zero if none
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code uuid}: catalog item UUID</li>
+ *   <li>{@code type}: item type UUID as string</li>
+ *   <li>{@code name}: item name</li>
+ *   <li>{@code path}: catalog path of the item</li>
+ *   <li>{@code definition}: definition XML</li>
+ *   <li>{@code documentation}: documentation XML</li>
+ *   <li>{@code tableNumber}: physical table number resolved through the system catalog, zero if none</li>
+ * </ul>
  */
 public final class GdbItem {
   private final UUID uuid;

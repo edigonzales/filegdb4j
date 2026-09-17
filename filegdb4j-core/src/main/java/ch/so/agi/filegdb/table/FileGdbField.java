@@ -5,15 +5,18 @@ import java.util.Objects;
 /**
  * Attribute field of a file geodatabase table.
  *
- * @param name field name
- * @param alias field alias
- * @param type field type
- * @param nullable whether the field participates in the null bit mask
- * @param required whether the field is required
- * @param editable whether the field is editable
- * @param maxWidth maximum width in UTF-16 code units for string fields, otherwise zero
- * @param highPrecision whether datetime values keep sub second precision
- * @param domain name of the assigned catalog domain, may be null
+ * <p>Properties:
+ * <ul>
+ *   <li>{@code name}: field name</li>
+ *   <li>{@code alias}: field alias</li>
+ *   <li>{@code type}: field type</li>
+ *   <li>{@code nullable}: whether the field participates in the null bit mask</li>
+ *   <li>{@code required}: whether the field is required</li>
+ *   <li>{@code editable}: whether the field is editable</li>
+ *   <li>{@code maxWidth}: maximum width in UTF-16 code units for string fields, otherwise zero</li>
+ *   <li>{@code highPrecision}: whether datetime values keep sub second precision</li>
+ *   <li>{@code domain}: name of the assigned catalog domain, may be null</li>
+ * </ul>
  */
 public final class FileGdbField {
   private final String name;
