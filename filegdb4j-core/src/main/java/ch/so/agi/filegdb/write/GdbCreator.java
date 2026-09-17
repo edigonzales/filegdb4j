@@ -117,21 +117,21 @@ public final class GdbCreator implements AutoCloseable {
             .map(i -> i.uuid().toString())
             .findFirst()
             .orElse("");
-    var opened = new java.util.ArrayList<TableFileWriter>();
+    java.util.ArrayList<TableFileWriter> opened = new java.util.ArrayList<TableFileWriter>();
     try {
       for (int i = 1; i <= 7; i++) {
         cancellation.run();
-        var writer =
+        TableFileWriter writer =
             TableFileWriter.append(
                 directory.resolve(GdbPaths.tableFileName(i)),
                 false,
-                java.util.Map.of(),
+                java.util.Collections.emptyMap(),
                 cancellation);
         writer.setCancellation(cancellation);
         opened.add(writer);
       }
     } catch (Exception e) {
-      for (var w : opened)
+      for (TableFileWriter w : opened)
         try {
           w.close();
         } catch (Exception c) {
@@ -147,11 +147,12 @@ public final class GdbCreator implements AutoCloseable {
     itemRelationships = opened.get(5);
     itemRelationshipTypes = opened.get(6);
     nextTableNumber = Math.toIntExact(systemCatalog.totalRecordCount() + 1);
-    for (var item : existingCatalog.items()) {
+    for (ch.so.agi.filegdb.catalog.GdbItem item : existingCatalog.items()) {
       if (item.name() != null && !item.name().isEmpty())
         names.add(item.name().toLowerCase(Locale.ROOT));
       if (item.tableNumber() > 0) datasetUuids.put(item.name(), item.uuid().toString());
-      var domain = ch.so.agi.filegdb.catalog.DefinitionXml.domain(item.definition());
+      ch.so.agi.filegdb.catalog.Domain domain =
+          ch.so.agi.filegdb.catalog.DefinitionXml.domain(item.definition());
       if (domain != null) {
         domains.put(domain.name(), domain);
         domainUuids.put(domain.name(), item.uuid().toString());
@@ -161,13 +162,13 @@ public final class GdbCreator implements AutoCloseable {
 
   public GdbFeatureWriter appendFeatures(String name, boolean createSpatialIndex)
       throws IOException {
-    var dataset = requireAppendable(name, true);
-    var writer = appendDataset(dataset, createSpatialIndex);
+    ch.so.agi.filegdb.catalog.Dataset dataset = requireAppendable(name, true);
+    TableFileWriter writer = appendDataset(dataset, createSpatialIndex);
     return new GdbFeatureWriter(dataset.name(), writer);
   }
 
   public GdbTableWriter appendRows(String name) throws IOException {
-    var dataset = requireAppendable(name, false);
+    ch.so.agi.filegdb.catalog.Dataset dataset = requireAppendable(name, false);
     return new GdbTableWriter(dataset.name(), appendDataset(dataset, false));
   }
 
@@ -175,13 +176,14 @@ public final class GdbCreator implements AutoCloseable {
       throws IOException {
     if (appended.contains(dataset.name()))
       throw new IOException("Dataset already opened for append: " + dataset.name());
-    var indexPath = ch.so.agi.filegdb.index.SpatialIndex.path(dataset.tableFile());
+    java.nio.file.Path indexPath = ch.so.agi.filegdb.index.SpatialIndex.path(dataset.tableFile());
     if (Files.exists(indexPath))
-      try (var source = ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
+      try (ch.so.agi.filegdb.table.FileGdbTableFile source =
+          ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
         ch.so.agi.filegdb.index.SpatialIndex.validate(
             indexPath, source.geomField().geometry().spatialIndexGridResolution(), cancellation);
       }
-    var writer =
+    TableFileWriter writer =
         TableFileWriter.append(
             dataset.tableFile(),
             index,
@@ -197,7 +199,7 @@ public final class GdbCreator implements AutoCloseable {
       throws IOException {
     if (closed) throw new IllegalStateException("File geodatabase is closed");
     if (existingCatalog == null) throw new IOException("Append requires an edit session");
-    var dataset =
+    ch.so.agi.filegdb.catalog.Dataset dataset =
         existingCatalog.datasets().stream()
             .filter(d -> d.name().equalsIgnoreCase(name))
             .findFirst()
@@ -219,8 +221,9 @@ public final class GdbCreator implements AutoCloseable {
         ch.so.agi.filegdb.catalog.DefinitionXml.unsupportedEditingReason(dataset.definition());
     if (unsupported != null)
       throw new IOException("Unsupported editing rules in " + dataset.name() + ": " + unsupported);
-    try (var table = ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
-      for (var field : table.fields()) {
+    try (ch.so.agi.filegdb.table.FileGdbTableFile table =
+        ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
+      for (ch.so.agi.filegdb.table.FileGdbField field : table.fields()) {
         if (field.type() == ch.so.agi.filegdb.table.FileGdbFieldType.GLOBALID
             || (!field.editable()
                 && field.type() != ch.so.agi.filegdb.table.FileGdbFieldType.OBJECTID
@@ -229,7 +232,7 @@ public final class GdbCreator implements AutoCloseable {
               "Unsupported automatic field: " + dataset.name() + "." + field.name());
       }
     }
-    for (var relationship : catalog.relationships()) {
+    for (ch.so.agi.filegdb.catalog.RelationshipClass relationship : catalog.relationships()) {
       if ((relationship.originClassName().equalsIgnoreCase(dataset.name())
               || relationship.destinationClassName().equalsIgnoreCase(dataset.name()))
           && (relationship.attributed()
@@ -244,7 +247,7 @@ public final class GdbCreator implements AutoCloseable {
   private static void rejectAttributeIndexes(Path table) throws IOException {
     String prefix =
         table.getFileName().toString().replace(".gdbtable", ".").toLowerCase(Locale.ROOT);
-    try (var files = Files.list(table.getParent())) {
+    try (java.util.stream.Stream<java.nio.file.Path> files = Files.list(table.getParent())) {
       if (files.anyMatch(
           p ->
               p.getFileName().toString().toLowerCase(Locale.ROOT).startsWith(prefix)
@@ -279,14 +282,14 @@ public final class GdbCreator implements AutoCloseable {
           || !used.add(geometryName.toLowerCase(Locale.ROOT)))
         throw new IllegalArgumentException("Invalid geometry field: " + geometryName);
     }
-    for (var field : fields) {
+    for (ch.so.agi.filegdb.table.FileGdbField field : fields) {
       if (field.name() == null
           || !field.name().matches("[\\p{L}_][\\p{L}\\p{N}_]*")
           || field.name().length() > 64
           || !used.add(field.name().toLowerCase(Locale.ROOT)))
         throw new IllegalArgumentException("Invalid or duplicate field: " + field.name());
       if (field.domain() != null) {
-        var domain = domains.get(field.domain());
+        ch.so.agi.filegdb.catalog.Domain domain = domains.get(field.domain());
         if (domain == null || domain.fieldType() != field.type())
           throw new IllegalArgumentException(
               "Unknown or incompatible domain on field: " + field.name());
@@ -297,13 +300,16 @@ public final class GdbCreator implements AutoCloseable {
   private void registerDataset(String name, String uuid, List<FileGdbField> fields)
       throws IOException {
     names.add(name.toLowerCase(Locale.ROOT));
-    datasetFields.put(name, List.copyOf(fields));
+    datasetFields.put(
+        name,
+        java.util.Collections.unmodifiableList(
+            new java.util.ArrayList<ch.so.agi.filegdb.table.FileGdbField>(fields)));
     for (String domain :
         fields.stream()
             .map(FileGdbField::domain)
             .filter(java.util.Objects::nonNull)
             .distinct()
-            .toList())
+            .collect(java.util.stream.Collectors.toList()))
       itemRelationships.writeRow(
           new Object[] {
             Uuids.generate(), uuid, domainUuids.get(domain), DOMAIN_IN_DATASET_UUID, null, null
@@ -314,11 +320,12 @@ public final class GdbCreator implements AutoCloseable {
   private ch.so.agi.filegdb.table.FileGdbFieldType keyType(String dataset, String name)
       throws IOException {
     if (!datasetFields.containsKey(dataset) && existingCatalog != null) {
-      var d =
+      ch.so.agi.filegdb.catalog.Dataset d =
           existingCatalog
               .dataset(dataset)
               .orElseThrow(() -> new IOException("Dataset missing: " + dataset));
-      try (var t = ch.so.agi.filegdb.table.FileGdbTableFile.open(d.tableFile())) {
+      try (ch.so.agi.filegdb.table.FileGdbTableFile t =
+          ch.so.agi.filegdb.table.FileGdbTableFile.open(d.tableFile())) {
         datasetFields.put(dataset, t.fields());
       }
     }
@@ -456,7 +463,7 @@ public final class GdbCreator implements AutoCloseable {
       throw new IllegalStateException("File geodatabase is already closed");
     }
     if (existingCatalog != null) {
-      var old =
+      java.util.Optional<ch.so.agi.filegdb.catalog.Domain> old =
           domains.values().stream()
               .filter(d -> d.name().equalsIgnoreCase(domain.name()))
               .findFirst();
@@ -503,12 +510,12 @@ public final class GdbCreator implements AutoCloseable {
       throw new IllegalStateException("File geodatabase is already closed");
     }
     if (existingCatalog != null) {
-      var old =
+      java.util.Optional<ch.so.agi.filegdb.catalog.RelationshipClass> old =
           existingCatalog.relationships().stream()
               .filter(r -> r.name().equalsIgnoreCase(definition.name()))
               .findFirst();
       if (old.isPresent()) {
-        var expected =
+        ch.so.agi.filegdb.catalog.RelationshipClass expected =
             ch.so.agi.filegdb.catalog.DefinitionXml.relationship(
                 DefinitionXmlWriter.relationship(definition, 0, ""));
         if (!old.get().equals(expected))
@@ -537,8 +544,9 @@ public final class GdbCreator implements AutoCloseable {
     if (definition.cardinality() == null
         || definition.cardinality() == ch.so.agi.filegdb.catalog.RelationshipCardinality.UNKNOWN)
       throw new IllegalArgumentException("Known relationship cardinality required");
-    var originType = keyType(definition.originClassName(), definition.originPrimaryKey());
-    if (!java.util.Set.of(
+    ch.so.agi.filegdb.table.FileGdbFieldType originType =
+        keyType(definition.originClassName(), definition.originPrimaryKey());
+    if (!java.util.EnumSet.of(
             ch.so.agi.filegdb.table.FileGdbFieldType.INT16,
             ch.so.agi.filegdb.table.FileGdbFieldType.INT32,
             ch.so.agi.filegdb.table.FileGdbFieldType.INT64,
@@ -549,7 +557,8 @@ public final class GdbCreator implements AutoCloseable {
       throw new IllegalArgumentException("Unsupported relationship key type: " + originType);
     if (definition.cardinality()
         != ch.so.agi.filegdb.catalog.RelationshipCardinality.MANY_TO_MANY) {
-      var targetType = keyType(definition.destinationClassName(), definition.originForeignKey());
+      ch.so.agi.filegdb.table.FileGdbFieldType targetType =
+          keyType(definition.destinationClassName(), definition.originForeignKey());
       boolean guids =
           (originType == ch.so.agi.filegdb.table.FileGdbFieldType.GLOBALID
               && targetType == ch.so.agi.filegdb.table.FileGdbFieldType.GUID);
@@ -571,13 +580,21 @@ public final class GdbCreator implements AutoCloseable {
     String xml =
         DefinitionXmlWriter.relationship(
             definition, (int) items.totalRecordCount() + 1, mappingTableOidName);
-    long subtype =
-        switch (definition.cardinality()) {
-          case ONE_TO_ONE -> 1;
-          case ONE_TO_MANY -> 2;
-          case MANY_TO_MANY -> 3;
-          case UNKNOWN -> 2;
-        };
+    long subtype;
+    switch (definition.cardinality()) {
+      case ONE_TO_ONE:
+        subtype = 1;
+        break;
+      case ONE_TO_MANY:
+        subtype = 2;
+        break;
+      case MANY_TO_MANY:
+        subtype = 3;
+        break;
+      default:
+        subtype = 2;
+        break;
+    }
     String uuid = Uuids.generate();
     items.writeRow(
         new Object[] {
@@ -670,8 +687,9 @@ public final class GdbCreator implements AutoCloseable {
 
   private void updateAppendedMetadata() throws IOException {
     if (existingCatalog == null || appended.isEmpty()) return;
-    try (var source = ch.so.agi.filegdb.table.FileGdbTableFile.open(items.path())) {
-      var fields = source.fields();
+    try (ch.so.agi.filegdb.table.FileGdbTableFile source =
+        ch.so.agi.filegdb.table.FileGdbTableFile.open(items.path())) {
+      java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields = source.fields();
       int nameIndex = -1, definitionIndex = -1;
       for (int i = 0; i < fields.size(); i++) {
         if (fields.get(i).name().equals("Name")) nameIndex = i;
@@ -681,26 +699,28 @@ public final class GdbCreator implements AutoCloseable {
         cancellation.run();
         Object[] row = source.readRow(i);
         if (row == null || !appended.contains(row[nameIndex])) continue;
-        var dataset = existingCatalog.dataset((String) row[nameIndex]).orElseThrow();
+        ch.so.agi.filegdb.catalog.Dataset dataset =
+            existingCatalog.dataset((String) row[nameIndex]).orElseThrow(() -> new java.util.NoSuchElementException("dataset missing"));
         if (!dataset.isFeatureClass()) continue;
-        var writer =
+        TableFileWriter writer =
             datasetWriters.stream()
                 .filter(w -> w.path().equals(dataset.tableFile()))
                 .findFirst()
-                .orElseThrow();
+                .orElseThrow(() -> new java.util.NoSuchElementException("dataset missing"));
         if (!writer.changed()) continue;
         rejectAttributeIndexes(items.path());
-        try (var table = ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
+        try (ch.so.agi.filegdb.table.FileGdbTableFile table =
+            ch.so.agi.filegdb.table.FileGdbTableFile.open(dataset.tableFile())) {
           row[definitionIndex] =
               ch.so.agi.filegdb.catalog.DefinitionXml.withStorageExtent(
                   (String) row[definitionIndex],
                   table.geomField().geometry().extent(),
                   Files.exists(ch.so.agi.filegdb.index.SpatialIndex.path(dataset.tableFile())));
         }
-        var values = new java.util.ArrayList<Object>();
+        java.util.ArrayList<Object> values = new java.util.ArrayList<Object>();
         for (int f = 0; f < fields.size(); f++)
           if (f != source.objectIdFieldIndex() && f != source.geomFieldIndex()) values.add(row[f]);
-        var geometry =
+        ch.so.agi.filegdb.geometry.FileGdbGeometry geometry =
             source.geomFieldIndex() < 0
                 ? null
                 : (ch.so.agi.filegdb.geometry.FileGdbGeometry) row[source.geomFieldIndex()];
@@ -716,7 +736,7 @@ public final class GdbCreator implements AutoCloseable {
     }
     closed = true;
     IOException error = null;
-    for (var writer : datasetWriters) {
+    for (TableFileWriter writer : datasetWriters) {
       try {
         writer.close();
       } catch (IOException | RuntimeException e) {
@@ -730,7 +750,7 @@ public final class GdbCreator implements AutoCloseable {
         error = new IOException("Cannot update FileGDB metadata", e);
       }
     for (TableFileWriter writer :
-        List.of(
+        java.util.Arrays.asList(
             itemRelationshipTypes,
             itemRelationships,
             itemTypes,
@@ -759,7 +779,7 @@ public final class GdbCreator implements AutoCloseable {
   }
 
   private void addSpatialRef(String wkt, CoordinatePrecision precision) throws IOException {
-    String text = wkt == null || wkt.isBlank() ? "{B286C06B-0879-11D2-AACA-00C04FA33C20}" : wkt;
+    String text = wkt == null || wkt.trim().isEmpty() ? "{B286C06B-0879-11D2-AACA-00C04FA33C20}" : wkt;
     if (!spatialRefTexts.add(text)) {
       return;
     }
@@ -789,7 +809,7 @@ public final class GdbCreator implements AutoCloseable {
       table.addField(FileGdbField.integer("FileFormat"));
       table.writeFieldDescriptors();
       for (String name :
-          List.of(
+          java.util.Arrays.asList(
               "GDB_SystemCatalog",
               "GDB_DBTune",
               "GDB_SpatialRefs",
@@ -834,7 +854,7 @@ public final class GdbCreator implements AutoCloseable {
     try {
       table.addField(FileGdbField.string("SRTEXT", 2048));
       for (String name :
-          List.of(
+          java.util.Arrays.asList(
               "FalseX",
               "FalseY",
               "XYUnits",

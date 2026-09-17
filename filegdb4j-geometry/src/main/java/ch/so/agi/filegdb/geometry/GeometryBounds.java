@@ -10,15 +10,18 @@ public final class GeometryBounds {
   public static Envelope of(FileGdbGeometry geometry) {
     List<FileGdbPoint> points = new ArrayList<>();
     if (geometry == null) return null;
-    if (geometry instanceof FileGdbPoint p) points.add(p);
-    else if (geometry instanceof FileGdbMultiPoint p) points.addAll(p.points());
+    if (geometry instanceof FileGdbPoint) points.add((FileGdbPoint) geometry);
+    else if (geometry instanceof FileGdbMultiPoint) points.addAll(((FileGdbMultiPoint) geometry).points());
     else {
       List<FileGdbPart> parts =
-          geometry instanceof FileGdbPolyline l ? l.parts() : ((FileGdbPolygon) geometry).parts();
+          geometry instanceof FileGdbPolyline
+              ? ((FileGdbPolyline) geometry).parts()
+              : ((FileGdbPolygon) geometry).parts();
       for (FileGdbPart part : parts) {
         points.addAll(part.points());
         for (FileGdbSegment segment : part.segments()) {
-          if (segment instanceof CircularArcSegment arc) {
+          if (segment instanceof CircularArcSegment) {
+            CircularArcSegment arc = (CircularArcSegment) segment;
             ArcGeometry circle =
                 ArcGeometry.of(
                     part.points().get(arc.startPointIndex()),

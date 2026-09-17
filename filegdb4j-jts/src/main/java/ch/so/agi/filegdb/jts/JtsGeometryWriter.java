@@ -30,7 +30,7 @@ public final class JtsGeometryWriter {
   }
 
   public FileGdbPolyline lineString(LineString lineString) {
-    return new FileGdbPolyline(List.of(part(lineString.getCoordinates())));
+    return new FileGdbPolyline(java.util.Collections.singletonList(part(lineString.getCoordinates())));
   }
 
   /** Converts any supported JTS geometry. */
@@ -38,36 +38,39 @@ public final class JtsGeometryWriter {
     if (geometry == null || geometry.isEmpty()) {
       return null;
     }
-    return switch (geometry.getGeometryType()) {
-      case "Point" -> point(geometry.getCoordinate());
-      case "MultiPoint" -> {
-        List<FileGdbPoint> points = new ArrayList<>();
-        for (int i = 0; i < geometry.getNumGeometries(); i++) {
-          points.add(point(geometry.getGeometryN(i).getCoordinate()));
-        }
-        yield new FileGdbMultiPoint(points);
+    String type = geometry.getGeometryType();
+    if ("Point".equals(type)) {
+      return point(geometry.getCoordinate());
+    }
+    if ("MultiPoint".equals(type)) {
+      List<FileGdbPoint> points = new ArrayList<>();
+      for (int i = 0; i < geometry.getNumGeometries(); i++) {
+        points.add(point(geometry.getGeometryN(i).getCoordinate()));
       }
-      case "LineString", "LinearRing", "CircularString" -> lineString((LineString) geometry);
-      case "MultiLineString", "MultiCurve" -> {
-        List<FileGdbPart> parts = new ArrayList<>();
-        for (int i = 0; i < geometry.getNumGeometries(); i++) {
-          parts.add(part(((LineString) geometry.getGeometryN(i)).getCoordinates()));
-        }
-        yield new FileGdbPolyline(parts);
+      return new FileGdbMultiPoint(points);
+    }
+    if ("LineString".equals(type) || "LinearRing".equals(type) || "CircularString".equals(type)) {
+      return lineString((LineString) geometry);
+    }
+    if ("MultiLineString".equals(type) || "MultiCurve".equals(type)) {
+      List<FileGdbPart> parts = new ArrayList<>();
+      for (int i = 0; i < geometry.getNumGeometries(); i++) {
+        parts.add(part(((LineString) geometry.getGeometryN(i)).getCoordinates()));
       }
-      case "Polygon" -> polygon((Polygon) geometry);
-      case "MultiPolygon" -> {
-        List<FileGdbPart> parts = new ArrayList<>();
-        for (int i = 0; i < geometry.getNumGeometries(); i++) {
-          Polygon polygon = (Polygon) geometry.getGeometryN(i);
-          parts.addAll(polygon(polygon).parts());
-        }
-        yield new FileGdbPolygon(parts);
+      return new FileGdbPolyline(parts);
+    }
+    if ("Polygon".equals(type)) {
+      return polygon((Polygon) geometry);
+    }
+    if ("MultiPolygon".equals(type)) {
+      List<FileGdbPart> parts = new ArrayList<>();
+      for (int i = 0; i < geometry.getNumGeometries(); i++) {
+        Polygon polygon = (Polygon) geometry.getGeometryN(i);
+        parts.addAll(polygon(polygon).parts());
       }
-      default ->
-          throw new IllegalArgumentException(
-              "Unsupported JTS geometry type: " + geometry.getGeometryType());
-    };
+      return new FileGdbPolygon(parts);
+    }
+    throw new IllegalArgumentException("Unsupported JTS geometry type: " + geometry.getGeometryType());
   }
 
   private static FileGdbPoint point(Coordinate coordinate) {
@@ -85,17 +88,19 @@ public final class JtsGeometryWriter {
 
   private FileGdbPart part(Coordinate[] coordinates) {
     return new FileGdbPart(
-        java.util.Arrays.stream(coordinates).map(JtsGeometryWriter::point).toList());
+        java.util.Arrays.stream(coordinates)
+            .map(JtsGeometryWriter::point)
+            .collect(java.util.stream.Collectors.toList()));
   }
 
   private FileGdbPart ring(Coordinate[] coordinates, boolean exterior) {
-    List<Coordinate> values = new ArrayList<>(List.of(coordinates));
+    List<Coordinate> values = new ArrayList<>(java.util.Arrays.asList(coordinates));
     if (!values.isEmpty() && !values.get(0).equals2D(values.get(values.size() - 1))) {
       values.add(values.get(0));
     }
     if (values.size() < 4 && exterior) {
       // A degenerate ring is not a polygon; keep the points as they are.
-      values = new ArrayList<>(List.of(coordinates));
+      values = new ArrayList<>(java.util.Arrays.asList(coordinates));
     } else if (values.size() > 1) {
       boolean clockwise = isClockwise(values);
       if (clockwise != exterior) {

@@ -1,0 +1,164 @@
+class public final class ch.so.agi.filegdb.geometry.ArcGeometry
+  public boolean containsAngle(double);
+  public ch.so.agi.filegdb.geometry.ArcGeometry(double, double, double, double, double);
+  public ch.so.agi.filegdb.geometry.FileGdbPoint point(double);
+  public double centerX();
+  public double centerY();
+  public double radius();
+  public double start();
+  public double sweep();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public static ch.so.agi.filegdb.geometry.ArcGeometry of(ch.so.agi.filegdb.geometry.FileGdbPoint, ch.so.agi.filegdb.geometry.FileGdbPoint, ch.so.agi.filegdb.geometry.CircularArcSegment);
+  public static double positive(double);
+class public final class ch.so.agi.filegdb.geometry.BezierSegment implements ch.so.agi.filegdb.geometry.FileGdbSegment
+  public ch.so.agi.filegdb.geometry.BezierSegment(int, double, double, double, double);
+  public double controlX1();
+  public double controlX2();
+  public double controlY1();
+  public double controlY2();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int startPointIndex();
+class public final class ch.so.agi.filegdb.geometry.CircularArcSegment implements ch.so.agi.filegdb.geometry.FileGdbSegment
+  public boolean byCenter();
+  public boolean counterClockwise();
+  public ch.so.agi.filegdb.geometry.CircularArcSegment(int, double, double, boolean, boolean);
+  public double interiorX();
+  public double interiorY();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int startPointIndex();
+class public final class ch.so.agi.filegdb.geometry.CoordinatePrecision
+  public ch.so.agi.filegdb.geometry.CoordinatePrecision withXY(double, double, double, double);
+  public ch.so.agi.filegdb.geometry.CoordinatePrecision(double, double, double, double, double, double, double, double, double, double);
+  public double mOrigin();
+  public double mScale();
+  public double mTolerance();
+  public double quantizeX(double);
+  public double quantizeY(double);
+  public double xOrigin();
+  public double xyResolution();
+  public double xyScale();
+  public double xyTolerance();
+  public double yOrigin();
+  public double zOrigin();
+  public double zScale();
+  public double zTolerance();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public static long gridCoordinate(double, double, double);
+  public void validateForWriting();
+class public final class ch.so.agi.filegdb.geometry.CurveStroker
+  public ch.so.agi.filegdb.geometry.CurveStroker();
+  public ch.so.agi.filegdb.geometry.CurveStroker(int);
+  public java.util.List<ch.so.agi.filegdb.geometry.FileGdbPoint> stroke(ch.so.agi.filegdb.geometry.FileGdbPart);
+  public static final int DEFAULT_STEPS;
+class public final class ch.so.agi.filegdb.geometry.EllipseSegment implements ch.so.agi.filegdb.geometry.FileGdbSegment
+  public boolean complete();
+  public boolean minor();
+  public ch.so.agi.filegdb.geometry.EllipseSegment(int, double, double, double, double, double, boolean, boolean);
+  public double centerX();
+  public double centerY();
+  public double minorMajorRatio();
+  public double rotationDegrees();
+  public double semiMajor();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int startPointIndex();
+class public final class ch.so.agi.filegdb.geometry.Envelope
+  public ch.so.agi.filegdb.geometry.Envelope(double, double, double, double);
+  public double xMax();
+  public double xMin();
+  public double yMax();
+  public double yMin();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+class public interface ch.so.agi.filegdb.geometry.FileGdbGeometry
+class public final class ch.so.agi.filegdb.geometry.FileGdbMultiPoint implements ch.so.agi.filegdb.geometry.FileGdbGeometry
+  public ch.so.agi.filegdb.geometry.FileGdbMultiPoint(java.util.List<ch.so.agi.filegdb.geometry.FileGdbPoint>);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.util.List<ch.so.agi.filegdb.geometry.FileGdbPoint> points();
+class public final class ch.so.agi.filegdb.geometry.FileGdbPart
+  public ch.so.agi.filegdb.geometry.FileGdbPart(java.util.List<ch.so.agi.filegdb.geometry.FileGdbPoint>);
+  public ch.so.agi.filegdb.geometry.FileGdbPart(java.util.List<ch.so.agi.filegdb.geometry.FileGdbPoint>, java.util.List<ch.so.agi.filegdb.geometry.FileGdbSegment>);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.util.List<ch.so.agi.filegdb.geometry.FileGdbPoint> points();
+  public java.util.List<ch.so.agi.filegdb.geometry.FileGdbSegment> segments();
+class public final class ch.so.agi.filegdb.geometry.FileGdbPoint implements ch.so.agi.filegdb.geometry.FileGdbGeometry
+  public ch.so.agi.filegdb.geometry.FileGdbPoint(double, double);
+  public ch.so.agi.filegdb.geometry.FileGdbPoint(double, double, java.lang.Double, java.lang.Double);
+  public double x();
+  public double y();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.Double m();
+  public java.lang.Double z();
+class public final class ch.so.agi.filegdb.geometry.FileGdbPolygon implements ch.so.agi.filegdb.geometry.FileGdbGeometry
+  public ch.so.agi.filegdb.geometry.FileGdbPolygon(java.util.List<ch.so.agi.filegdb.geometry.FileGdbPart>);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.util.List<ch.so.agi.filegdb.geometry.FileGdbPart> parts();
+class public final class ch.so.agi.filegdb.geometry.FileGdbPolyline implements ch.so.agi.filegdb.geometry.FileGdbGeometry
+  public ch.so.agi.filegdb.geometry.FileGdbPolyline(java.util.List<ch.so.agi.filegdb.geometry.FileGdbPart>);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.util.List<ch.so.agi.filegdb.geometry.FileGdbPart> parts();
+class public interface ch.so.agi.filegdb.geometry.FileGdbSegment
+  public abstract int startPointIndex();
+class public final class ch.so.agi.filegdb.geometry.GeometryBounds
+  public static boolean intersects(ch.so.agi.filegdb.geometry.Envelope, ch.so.agi.filegdb.geometry.Envelope);
+  public static ch.so.agi.filegdb.geometry.Envelope of(ch.so.agi.filegdb.geometry.FileGdbGeometry);
+class public final class ch.so.agi.filegdb.geometry.GeometryCodec
+  public static byte[] encode(ch.so.agi.filegdb.geometry.FileGdbGeometry, ch.so.agi.filegdb.geometry.GeometryFieldDefinition);
+  public static ch.so.agi.filegdb.geometry.FileGdbGeometry decode(byte[], ch.so.agi.filegdb.geometry.GeometryFieldDefinition);
+class final class ch.so.agi.filegdb.geometry.GeometryCodec$Buffer
+class final class ch.so.agi.filegdb.geometry.GeometryCodec$Cursor
+class final class ch.so.agi.filegdb.geometry.GeometryCodec$Delta
+class public final class ch.so.agi.filegdb.geometry.GeometryFieldDefinition
+  public boolean hasM();
+  public boolean hasZ();
+  public boolean nullable();
+  public ch.so.agi.filegdb.geometry.CoordinatePrecision precision();
+  public ch.so.agi.filegdb.geometry.Envelope extent();
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition withGridResolution(java.util.List<java.lang.Double>);
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition withM();
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition withNullable(boolean);
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition withPrecision(ch.so.agi.filegdb.geometry.CoordinatePrecision);
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition withWkt(java.lang.String);
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition withZ();
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition(java.lang.String, java.lang.String, boolean, java.lang.String, ch.so.agi.filegdb.geometry.GeometryKind, boolean, boolean, ch.so.agi.filegdb.geometry.CoordinatePrecision, ch.so.agi.filegdb.geometry.Envelope, java.util.List<java.lang.Double>);
+  public ch.so.agi.filegdb.geometry.GeometryKind kind();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String alias();
+  public java.lang.String name();
+  public java.lang.String wkt();
+  public java.util.List<java.lang.Double> spatialIndexGridResolution();
+  public static ch.so.agi.filegdb.geometry.GeometryFieldDefinition of(java.lang.String, ch.so.agi.filegdb.geometry.GeometryKind);
+  public static final ch.so.agi.filegdb.geometry.CoordinatePrecision ARCGIS_DEFAULT_PRECISION;
+class public final class ch.so.agi.filegdb.geometry.GeometryKind extends java.lang.Enum<ch.so.agi.filegdb.geometry.GeometryKind>
+  public int id();
+  public static ch.so.agi.filegdb.geometry.GeometryKind fromId(int);
+  public static ch.so.agi.filegdb.geometry.GeometryKind valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.geometry.GeometryKind[] values();
+  public static final ch.so.agi.filegdb.geometry.GeometryKind LINE;
+  public static final ch.so.agi.filegdb.geometry.GeometryKind MULTIPATCH;
+  public static final ch.so.agi.filegdb.geometry.GeometryKind MULTIPOINT;
+  public static final ch.so.agi.filegdb.geometry.GeometryKind NONE;
+  public static final ch.so.agi.filegdb.geometry.GeometryKind POINT;
+  public static final ch.so.agi.filegdb.geometry.GeometryKind POLYGON;

@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,7 +89,7 @@ public final class GdbCatalog {
   public List<Dataset> datasets() {
     List<Dataset> datasets = new ArrayList<>();
     for (GdbItem item : items) {
-      if (item.name() == null || item.name().isBlank() || item.tableNumber() == 0) {
+      if (item.name() == null || item.name().trim().isEmpty() || item.tableNumber() == 0) {
         continue;
       }
       String definition = item.definition();
@@ -104,7 +105,7 @@ public final class GdbCatalog {
           new Dataset(
               item.name(), kind, item.tableNumber(), tableFile, definition, DefinitionXml.crs(definition)));
     }
-    return List.copyOf(datasets);
+    return Collections.unmodifiableList(new ArrayList<>(datasets));
   }
 
   public Optional<Dataset> dataset(String name) {
@@ -130,11 +131,11 @@ public final class GdbCatalog {
           List<Domain> parsed = new ArrayList<>();
           for (GdbItem item : items) {
             Domain domain = DefinitionXml.domain(item.definition());
-            if (domain != null && domain.name() != null && !domain.name().isBlank()) {
+            if (domain != null && domain.name() != null && !domain.name().trim().isEmpty()) {
               parsed.add(domain);
             }
           }
-          result = List.copyOf(parsed);
+          result = Collections.unmodifiableList(new ArrayList<>(parsed));
           domains = result;
         }
       }
@@ -163,11 +164,11 @@ public final class GdbCatalog {
             RelationshipClass relationship = DefinitionXml.relationship(item.definition());
             if (relationship != null
                 && relationship.name() != null
-                && !relationship.name().isBlank()) {
+                && !relationship.name().trim().isEmpty()) {
               parsed.add(relationship);
             }
           }
-          result = List.copyOf(parsed);
+          result = Collections.unmodifiableList(new ArrayList<>(parsed));
           relationships = result;
         }
       }
@@ -198,7 +199,7 @@ public final class GdbCatalog {
         Object name = values == null ? null : values[nameIndex];
         names.add(name == null ? "" : (String) name);
       }
-      return List.copyOf(names);
+      return Collections.unmodifiableList(new ArrayList<>(names));
     }
   }
 
@@ -245,7 +246,7 @@ public final class GdbCatalog {
                 (String) values[documentationIndex],
                 tableNumber));
       }
-      return List.copyOf(items);
+      return Collections.unmodifiableList(new ArrayList<>(items));
     }
   }
 

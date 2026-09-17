@@ -16,8 +16,8 @@ public enum DomainSplitPolicy {
   }
 
   public static DomainSplitPolicy fromXml(String value) {
-    if (value == null || value.isBlank()) return DEFAULT_VALUE;
-    for (var policy : values()) if (policy.xml.equals(value)) return policy;
+    if (value == null || value.trim().isEmpty()) return DEFAULT_VALUE;
+    for (DomainSplitPolicy policy : values()) if (policy.xml.equals(value)) return policy;
     throw new IllegalArgumentException("Unknown domain policy: " + value);
   }
 }

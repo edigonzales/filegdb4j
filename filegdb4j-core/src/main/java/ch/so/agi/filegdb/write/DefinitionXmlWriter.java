@@ -54,7 +54,7 @@ final class DefinitionXmlWriter {
 
     element(xml, 1, "CLSID", "{52353152-891A-11D0-BEC6-00805F7C4268}");
     element(xml, 1, "EXTCLSID", "");
-    if (definition.alias() != null && !definition.alias().isBlank()) {
+    if (definition.alias() != null && !definition.alias().trim().isEmpty()) {
       element(xml, 1, "AliasName", definition.alias());
     }
     element(xml, 1, "IsTimeInUTC", "false");
@@ -75,7 +75,7 @@ final class DefinitionXmlWriter {
   private static void writeField(StringBuilder xml, FileGdbField field) {
     xml.append("    <GPFieldInfoEx xsi:type=\"typens:GPFieldInfoEx\">\n");
     element(xml, 3, "Name", field.name());
-    if (field.alias() != null && !field.alias().isBlank()) {
+    if (field.alias() != null && !field.alias().trim().isEmpty()) {
       element(xml, 3, "AliasName", field.alias());
     }
     element(xml, 3, "FieldType", esriType(field.type()));
@@ -94,7 +94,7 @@ final class DefinitionXmlWriter {
     element(xml, 3, "Length", Integer.toString(fieldLength(field)));
     element(xml, 3, "Precision", "0");
     element(xml, 3, "Scale", "0");
-    if (field.domain() != null && !field.domain().isBlank()) {
+    if (field.domain() != null && !field.domain().trim().isEmpty()) {
       element(xml, 3, "DomainName", field.domain());
     }
     xml.append("    </GPFieldInfoEx>\n");
@@ -166,9 +166,11 @@ final class DefinitionXmlWriter {
     element(xml, 1, "SplitPolicy", domain.splitPolicy().xml());
     element(xml, 1, "Description", domain.description());
     element(xml, 1, "Owner", "");
-    if (domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain codedDomain) {
+    if (domain instanceof ch.so.agi.filegdb.catalog.CodedValueDomain) {
+      ch.so.agi.filegdb.catalog.CodedValueDomain codedDomain =
+          (ch.so.agi.filegdb.catalog.CodedValueDomain) domain;
       xml.append("  <CodedValues xsi:type=\"typens:ArrayOfCodedValue\">\n");
-      for (var value : codedDomain.values()) {
+      for (ch.so.agi.filegdb.catalog.CodedValue value : codedDomain.values()) {
         xml.append("    <CodedValue xsi:type=\"typens:CodedValue\">\n");
         element(xml, 3, "Name", value.name());
         xml.append("      <Code xsi:type=\"")
@@ -179,11 +181,14 @@ final class DefinitionXmlWriter {
         xml.append("    </CodedValue>\n");
       }
       xml.append("  </CodedValues>\n");
-    } else if (domain instanceof ch.so.agi.filegdb.catalog.RangeDomain rangeDomain) {
-      for (var entry :
-          java.util.List.of(
-              java.util.Map.entry("MinValue", rangeDomain.minValue()),
-              java.util.Map.entry("MaxValue", rangeDomain.maxValue()))) {
+    } else if (domain instanceof ch.so.agi.filegdb.catalog.RangeDomain) {
+      ch.so.agi.filegdb.catalog.RangeDomain rangeDomain =
+          (ch.so.agi.filegdb.catalog.RangeDomain) domain;
+      for (java.util.Map.Entry<String, String> entry :
+          java.util.Arrays.asList(
+              new java.util.AbstractMap.SimpleImmutableEntry<>("MinValue", rangeDomain.minValue()),
+              new java.util.AbstractMap.SimpleImmutableEntry<>(
+                  "MaxValue", rangeDomain.maxValue()))) {
         xml.append("  <")
             .append(entry.getKey())
             .append(" xsi:type=\"")
@@ -299,31 +304,46 @@ final class DefinitionXmlWriter {
   }
 
   private static String cardinality(ch.so.agi.filegdb.catalog.RelationshipCardinality cardinality) {
-    return switch (cardinality) {
-      case ONE_TO_ONE -> "esriRelCardinalityOneToOne";
-      case ONE_TO_MANY -> "esriRelCardinalityOneToMany";
-      case MANY_TO_MANY -> "esriRelCardinalityManyToMany";
-      case UNKNOWN -> "esriRelCardinalityOneToMany";
-    };
+    switch (cardinality) {
+      case ONE_TO_ONE:
+        return "esriRelCardinalityOneToOne";
+      case ONE_TO_MANY:
+        return "esriRelCardinalityOneToMany";
+      case MANY_TO_MANY:
+        return "esriRelCardinalityManyToMany";
+      case UNKNOWN:
+        return "esriRelCardinalityOneToMany";
+    }
+    throw new IncompatibleClassChangeError();
   }
 
   private static String codeType(ch.so.agi.filegdb.table.FileGdbFieldType type) {
-    return switch (type) {
-      case INT16 -> "xs:short";
-      case INT32 -> "xs:int";
-      case INT64 -> "xs:long";
-      case FLOAT32 -> "xs:float";
-      case FLOAT64 -> "xs:double";
-      case DATETIME, DATETIME_WITH_OFFSET -> "xs:dateTime";
-      case DATE -> "xs:date";
-      case TIME -> "xs:time";
-      default -> "xs:string";
-    };
+    switch (type) {
+      case INT16:
+        return "xs:short";
+      case INT32:
+        return "xs:int";
+      case INT64:
+        return "xs:long";
+      case FLOAT32:
+        return "xs:float";
+      case FLOAT64:
+        return "xs:double";
+      case DATETIME:
+      case DATETIME_WITH_OFFSET:
+        return "xs:dateTime";
+      case DATE:
+        return "xs:date";
+      case TIME:
+        return "xs:time";
+      default:
+        return "xs:string";
+    }
   }
 
   private static void writeSpatialReference(
       StringBuilder xml, GeometryFieldDefinition geometry, CrsDefinition crs) {
-    boolean hasWkt = geometry.wkt() != null && !geometry.wkt().isBlank();
+    boolean hasWkt = geometry.wkt() != null && !geometry.wkt().trim().isEmpty();
     String type;
     if (hasWkt) {
       type =
@@ -361,52 +381,97 @@ final class DefinitionXmlWriter {
   }
 
   private static String shapeType(GeometryKind kind) {
-    return switch (kind) {
-      case POINT -> "esriGeometryPoint";
-      case MULTIPOINT -> "esriGeometryMultipoint";
-      case LINE -> "esriGeometryPolyline";
-      case POLYGON -> "esriGeometryPolygon";
-      case MULTIPATCH -> "esriGeometryMultiPatch";
-      case NONE -> "";
-    };
+    switch (kind) {
+      case POINT:
+        return "esriGeometryPoint";
+      case MULTIPOINT:
+        return "esriGeometryMultipoint";
+      case LINE:
+        return "esriGeometryPolyline";
+      case POLYGON:
+        return "esriGeometryPolygon";
+      case MULTIPATCH:
+        return "esriGeometryMultiPatch";
+      case NONE:
+        return "";
+    }
+    throw new IncompatibleClassChangeError();
   }
 
   private static String esriType(FileGdbFieldType type) {
-    return switch (type) {
-      case INT16 -> "esriFieldTypeSmallInteger";
-      case INT32 -> "esriFieldTypeInteger";
-      case INT64 -> "esriFieldTypeBigInteger";
-      case FLOAT32 -> "esriFieldTypeSingle";
-      case FLOAT64 -> "esriFieldTypeDouble";
-      case STRING -> "esriFieldTypeString";
-      case DATETIME -> "esriFieldTypeDate";
-      case DATE -> "esriFieldTypeDateOnly";
-      case TIME -> "esriFieldTypeTimeOnly";
-      case DATETIME_WITH_OFFSET -> "esriFieldTypeTimestampOffset";
-      case OBJECTID -> "esriFieldTypeOID";
-      case GEOMETRY -> "esriFieldTypeGeometry";
-      case BINARY -> "esriFieldTypeBlob";
-      case RASTER -> "esriFieldTypeRaster";
-      case GUID -> "esriFieldTypeGUID";
-      case GLOBALID -> "esriFieldTypeGlobalID";
-      case XML -> "esriFieldTypeXML";
-      case UNDEFINED -> "";
-    };
+    switch (type) {
+      case INT16:
+        return "esriFieldTypeSmallInteger";
+      case INT32:
+        return "esriFieldTypeInteger";
+      case INT64:
+        return "esriFieldTypeBigInteger";
+      case FLOAT32:
+        return "esriFieldTypeSingle";
+      case FLOAT64:
+        return "esriFieldTypeDouble";
+      case STRING:
+        return "esriFieldTypeString";
+      case DATETIME:
+        return "esriFieldTypeDate";
+      case DATE:
+        return "esriFieldTypeDateOnly";
+      case TIME:
+        return "esriFieldTypeTimeOnly";
+      case DATETIME_WITH_OFFSET:
+        return "esriFieldTypeTimestampOffset";
+      case OBJECTID:
+        return "esriFieldTypeOID";
+      case GEOMETRY:
+        return "esriFieldTypeGeometry";
+      case BINARY:
+        return "esriFieldTypeBlob";
+      case RASTER:
+        return "esriFieldTypeRaster";
+      case GUID:
+        return "esriFieldTypeGUID";
+      case GLOBALID:
+        return "esriFieldTypeGlobalID";
+      case XML:
+        return "esriFieldTypeXML";
+      case UNDEFINED:
+        return "";
+    }
+    throw new IncompatibleClassChangeError();
   }
 
   private static int fieldLength(FileGdbField field) {
-    return switch (field.type()) {
-      case INT16 -> 2;
-      case INT32, FLOAT32 -> 4;
-      case INT64, FLOAT64, DATETIME, DATE, TIME -> 8;
-      case DATETIME_WITH_OFFSET -> 10;
-      case STRING -> field.maxWidth();
-      default -> 0;
-    };
+    switch (field.type()) {
+      case INT16:
+        return 2;
+      case INT32:
+      case FLOAT32:
+        return 4;
+      case INT64:
+      case FLOAT64:
+      case DATETIME:
+      case DATE:
+      case TIME:
+        return 8;
+      case DATETIME_WITH_OFFSET:
+        return 10;
+      case STRING:
+        return field.maxWidth();
+      default:
+        return 0;
+    }
+  }
+
+  private static String repeat(String value, int count) {
+    StringBuilder result = new StringBuilder(value.length() * count);
+    for (int i = 0; i < count; i++) {
+      result.append(value);
+    }
+    return result.toString();
   }
 
   private static void element(StringBuilder xml, int indent, String name, String value) {
-    xml.append("  ".repeat(indent))
+    xml.append(repeat("  ", indent))
         .append('<')
         .append(name)
         .append('>')

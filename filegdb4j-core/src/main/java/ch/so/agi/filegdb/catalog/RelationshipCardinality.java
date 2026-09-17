@@ -11,11 +11,15 @@ public enum RelationshipCardinality {
     if (value == null) {
       return UNKNOWN;
     }
-    return switch (value) {
-      case "esriRelCardinalityOneToOne" -> ONE_TO_ONE;
-      case "esriRelCardinalityOneToMany" -> ONE_TO_MANY;
-      case "esriRelCardinalityManyToMany" -> MANY_TO_MANY;
-      default -> UNKNOWN;
-    };
+    if ("esriRelCardinalityOneToOne".equals(value)) {
+      return ONE_TO_ONE;
+    }
+    if ("esriRelCardinalityOneToMany".equals(value)) {
+      return ONE_TO_MANY;
+    }
+    if ("esriRelCardinalityManyToMany".equals(value)) {
+      return MANY_TO_MANY;
+    }
+    return UNKNOWN;
   }
 }

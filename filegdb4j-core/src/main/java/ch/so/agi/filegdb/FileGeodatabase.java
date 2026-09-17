@@ -145,11 +145,15 @@ public final class FileGeodatabase implements AutoCloseable {
   }
 
   public List<Dataset> featureClasses() {
-    return datasets().stream().filter(Dataset::isFeatureClass).toList();
+    return datasets().stream()
+        .filter(Dataset::isFeatureClass)
+        .collect(java.util.stream.Collectors.toList());
   }
 
   public List<Dataset> tables() {
-    return datasets().stream().filter(dataset -> dataset.kind() == DatasetKind.TABLE).toList();
+    return datasets().stream()
+        .filter(dataset -> dataset.kind() == DatasetKind.TABLE)
+        .collect(java.util.stream.Collectors.toList());
   }
 
   public Optional<Dataset> dataset(String name) {

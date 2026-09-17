@@ -21,10 +21,52 @@ public final class SpatialIndex {
     return table.resolveSibling(table.getFileName().toString().replace(".gdbtable", ".spx"));
   }
 
-  private record Entry(long key, long id) implements Comparable<Entry> {
+  private static final class Entry implements Comparable<Entry> {
+    private final long key;
+    private final long id;
+
+    private Entry(long key, long id) {
+      this.key = key;
+      this.id = id;
+    }
+
+    public long key() {
+      return key;
+    }
+
+    public long id() {
+      return id;
+    }
+
+    @Override
     public int compareTo(Entry e) {
       int c = Long.compare(key, e.key);
       return c == 0 ? Long.compare(id, e.id) : c;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      Entry other = (Entry) o;
+      return key == other.key && id == other.id;
+    }
+
+    @Override
+    public final int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(key);
+      result = 31 * result + Long.hashCode(id);
+      return result;
+    }
+
+    @Override
+    public final String toString() {
+      return "Entry[key=" + key + ", id=" + id + "]";
     }
   }
 
@@ -44,7 +86,7 @@ public final class SpatialIndex {
   public static double build(Path tablePath, Runnable cancellation) throws IOException {
     double grid = 1, span = 0, maxAbs = 0;
     long count = 0;
-    try (var table = FileGdbTableFile.open(tablePath)) {
+    try (FileGdbTableFile table = FileGdbTableFile.open(tablePath)) {
       for (long i = 0; i < table.totalRecordCount(); i++) {
         cancellation.run();
         Object[] row = table.readRow(i);
@@ -75,7 +117,7 @@ public final class SpatialIndex {
     try {
       List<Path> runs = new ArrayList<>();
       List<Entry> entries = new ArrayList<>();
-      try (var table = FileGdbTableFile.open(tablePath)) {
+      try (FileGdbTableFile table = FileGdbTableFile.open(tablePath)) {
         for (long i = 0; i < table.totalRecordCount(); i++) {
           cancellation.run();
           Object[] row = table.readRow(i);
@@ -97,7 +139,7 @@ public final class SpatialIndex {
         cancellation.run();
         List<Path> merged = new ArrayList<>();
         for (int start = 0; start < runs.size(); start += 64) {
-          var batch = runs.subList(start, Math.min(start + 64, runs.size()));
+          List<Path> batch = runs.subList(start, Math.min(start + 64, runs.size()));
           Path target = work.resolve("merge-" + generation + "-" + start);
           merge(batch, target, cancellation);
           merged.add(target);
@@ -112,8 +154,12 @@ public final class SpatialIndex {
       writePages(sorted, total, path(tablePath), cancellation);
       return grid;
     } finally {
-      try (var files = Files.walk(work)) {
-        for (Path p : files.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p);
+      try (java.util.stream.Stream<Path> files = Files.walk(work)) {
+        for (Path p :
+            files
+                .sorted(Comparator.reverseOrder())
+                .collect(java.util.stream.Collectors.toList()))
+          Files.deleteIfExists(p);
       }
     }
   }
@@ -121,7 +167,8 @@ public final class SpatialIndex {
   private static Path spill(Path work, List<Entry> values, int n) throws IOException {
     Collections.sort(values);
     Path p = work.resolve("run" + n);
-    try (var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(p)))) {
+    try (DataOutputStream out =
+        new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(p)))) {
       for (Entry e : values) {
         out.writeLong(e.key);
         out.writeLong(e.id);
@@ -130,16 +177,58 @@ public final class SpatialIndex {
     return p;
   }
 
-  private record Head(Entry entry, int run) {}
+  private static final class Head {
+    private final Entry entry;
+    private final int run;
+
+    private Head(Entry entry, int run) {
+      this.entry = entry;
+      this.run = run;
+    }
+
+    public Entry entry() {
+      return entry;
+    }
+
+    public int run() {
+      return run;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      Head other = (Head) o;
+      return run == other.run && Objects.equals(entry, other.entry);
+    }
+
+    @Override
+    public final int hashCode() {
+      int result = 0;
+      result = 31 * result + Objects.hashCode(entry);
+      result = 31 * result + Integer.hashCode(run);
+      return result;
+    }
+
+    @Override
+    public final String toString() {
+      return "Head[entry=" + entry + ", run=" + run + "]";
+    }
+  }
 
   private static long merge(List<Path> runs, Path target, Runnable cancellation)
       throws IOException {
     List<DataInputStream> streams = new ArrayList<>();
-    var queue = new PriorityQueue<Head>(Comparator.comparing(Head::entry));
+    PriorityQueue<Head> queue = new PriorityQueue<>(Comparator.comparing(Head::entry));
     long count = 0;
-    try (var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(target)))) {
+    try (DataOutputStream out =
+        new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(target)))) {
       for (Path run : runs) {
-        var in = new DataInputStream(new BufferedInputStream(Files.newInputStream(run)));
+        DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(run)));
         streams.add(in);
         Entry e = next(in);
         if (e != null) queue.add(new Head(e, streams.size() - 1));
@@ -154,7 +243,7 @@ public final class SpatialIndex {
         if (e != null) queue.add(new Head(e, h.run));
       }
     } finally {
-      for (var in : streams) in.close();
+      for (DataInputStream in : streams) in.close();
     }
     return count;
   }
@@ -181,8 +270,8 @@ public final class SpatialIndex {
 
   private static void writePages(Path sorted, long total, Path output, Runnable cancellation)
       throws IOException {
-    try (var data = new RandomAccessFile(sorted.toFile(), "r");
-        var out = new RandomAccessFile(output.toFile(), "rw")) {
+    try (RandomAccessFile data = new RandomAccessFile(sorted.toFile(), "r");
+        RandomAccessFile out = new RandomAccessFile(output.toFile(), "rw")) {
       out.setLength(0);
       List<Node> level = new ArrayList<>();
       for (long i = 0; i < Math.max(1, total); i += CAP) {
@@ -198,8 +287,9 @@ public final class SpatialIndex {
       while (level.size() > 1) {
         List<Node> parent = new ArrayList<>();
         for (int i = 0; i < level.size(); i += CAP) {
-          var children = new ArrayList<>(level.subList(i, Math.min(i + CAP, level.size())));
-          var node = new Node(0, 0, children.getLast().max);
+          ArrayList<Node> children =
+              new ArrayList<>(level.subList(i, Math.min(i + CAP, level.size())));
+          Node node = new Node(0, 0, children.get(children.size() - 1).max);
           node.children = children;
           parent.add(node);
         }
@@ -208,7 +298,7 @@ public final class SpatialIndex {
       }
       if (depth > 4) throw new IOException("Spatial index exceeds supported depth");
       List<Node> all = new ArrayList<>();
-      all.add(level.getFirst());
+      all.add(level.get(0));
       for (int i = 0; i < all.size(); i++) {
         Node n = all.get(i);
         n.id = i + 1;
@@ -262,7 +352,7 @@ public final class SpatialIndex {
 
   private static SortedSet<Long> scan(
       Path index, List<Double> grids, Envelope filter, Runnable cancellation) throws IOException {
-    try (var in = new RandomAccessFile(index.toFile(), "r")) {
+    try (RandomAccessFile in = new RandomAccessFile(index.toFile(), "r")) {
       if (in.length() < 22) throw new IOException("Truncated spatial index");
       in.seek(in.length() - 4);
       int version = Integer.reverseBytes(in.readInt());
@@ -299,7 +389,7 @@ public final class SpatialIndex {
       throws IOException {
     int grid = (int) (key >>> 62);
     if (grid >= grids.size()) throw new IOException("SPX grid missing");
-    double step = grids.get(grid), shift = SHIFT * grids.getFirst() / step;
+    double step = grids.get(grid), shift = SHIFT * grids.get(0) / step;
     if (!Double.isFinite(step) || step <= 0) throw new IOException("Invalid spatial grid");
     long x = (key >>> 31) & 0x7fffffffL, y = key & 0x7fffffffL;
     return x >= Math.floor(f.xMin() / step + shift)
@@ -357,7 +447,7 @@ public final class SpatialIndex {
         long low = i == 0 ? Long.MIN_VALUE : b.getLong(valueOffset + (i - 1) * 8);
         long high = i == n ? Long.MAX_VALUE : b.getLong(valueOffset + i * 8);
         if (f != null && grids.size() == 1) {
-          double step = grids.getFirst();
+          double step = grids.get(0);
           long xmin = Math.max(0, cell(f.xMin(), step)),
               xmax = Math.min(0x7fffffffL, cell(f.xMax(), step));
           long ymin = Math.max(0, cell(f.yMin(), step)),

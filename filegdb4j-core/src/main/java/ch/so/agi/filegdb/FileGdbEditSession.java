@@ -5,9 +5,12 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** Exclusive, recoverable directory transaction. Foreign applications must close the GDB first. */
 public final class FileGdbEditSession implements AutoCloseable {
@@ -104,10 +107,10 @@ public final class FileGdbEditSession implements AutoCloseable {
       return;
     }
     // Flush every changed file before publishing the commit intent.
-    try (var files = Files.walk(work)) {
-      for (Path p : files.filter(Files::isRegularFile).toList()) {
+    try (Stream<Path> files = Files.walk(work)) {
+      for (Path p : files.filter(Files::isRegularFile).collect(Collectors.toList())) {
         cancellation.run();
-        try (var c = FileChannel.open(p, StandardOpenOption.WRITE)) {
+        try (FileChannel c = FileChannel.open(p, StandardOpenOption.WRITE)) {
           c.force(true);
         }
       }
@@ -137,13 +140,13 @@ public final class FileGdbEditSession implements AutoCloseable {
 
   private void state(String text) throws IOException {
     Path next = journal.resolveSibling(journal.getFileName() + ".next");
-    try (var c =
+    try (FileChannel c =
         FileChannel.open(
             next,
             StandardOpenOption.CREATE,
             StandardOpenOption.TRUNCATE_EXISTING,
             StandardOpenOption.WRITE)) {
-      var bytes = ByteBuffer.wrap(text.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+      ByteBuffer bytes = ByteBuffer.wrap(text.getBytes(StandardCharsets.US_ASCII));
       while (bytes.hasRemaining()) c.write(bytes);
       c.force(true);
     }
@@ -152,23 +155,22 @@ public final class FileGdbEditSession implements AutoCloseable {
 
   private void recover() throws IOException {
     if (Files.exists(journal)) {
-      String state = Files.readString(journal);
-      switch (state) {
-        case "COMMITTED" -> {
-          if (!Files.isDirectory(target))
-            throw new IOException(
-                "Committed FileGDB missing; preserve backup for recovery: " + backup);
-          remove(backup);
-        }
-        case "PREPARED_EXISTING" -> {
-          if (Files.exists(backup)) {
-            remove(target);
-            Files.move(backup, target, StandardCopyOption.ATOMIC_MOVE);
-          } else if (!Files.isDirectory(target))
-            throw new IOException("Cannot recover FileGDB: original and backup missing");
-        }
-        case "PREPARED_NEW" -> remove(target);
-        default -> throw new IOException("Unknown FileGDB recovery state: " + journal);
+      String state = new String(Files.readAllBytes(journal), StandardCharsets.US_ASCII);
+      if ("COMMITTED".equals(state)) {
+        if (!Files.isDirectory(target))
+          throw new IOException(
+              "Committed FileGDB missing; preserve backup for recovery: " + backup);
+        remove(backup);
+      } else if ("PREPARED_EXISTING".equals(state)) {
+        if (Files.exists(backup)) {
+          remove(target);
+          Files.move(backup, target, StandardCopyOption.ATOMIC_MOVE);
+        } else if (!Files.isDirectory(target))
+          throw new IOException("Cannot recover FileGDB: original and backup missing");
+      } else if ("PREPARED_NEW".equals(state)) {
+        remove(target);
+      } else {
+        throw new IOException("Unknown FileGDB recovery state: " + journal);
       }
       Files.delete(journal);
     } else if (Files.exists(backup))
@@ -179,8 +181,8 @@ public final class FileGdbEditSession implements AutoCloseable {
 
   private void rejectForeignLocks() throws IOException {
     if (!Files.isDirectory(target)) return;
-    try (var paths = Files.walk(target)) {
-      for (Path p : paths.toList()) {
+    try (Stream<Path> paths = Files.walk(target)) {
+      for (Path p : paths.collect(Collectors.toList())) {
         cancellation.run();
         if (p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".lock"))
           throw new IOException("Close other FileGDB users before editing; lock exists: " + p);
@@ -191,8 +193,8 @@ public final class FileGdbEditSession implements AutoCloseable {
   private static Map<String, String> fingerprint(Path root, Runnable cancellation)
       throws IOException {
     Map<String, String> values = new TreeMap<>();
-    try (var paths = Files.walk(root)) {
-      for (Path p : paths.toList()) {
+    try (Stream<Path> paths = Files.walk(root)) {
+      for (Path p : paths.collect(Collectors.toList())) {
         cancellation.run();
         if (Files.isSymbolicLink(p))
           throw new IOException("Symbolic links inside FileGDB are unsupported: " + p);
@@ -203,7 +205,7 @@ public final class FileGdbEditSession implements AutoCloseable {
         }
         try {
           MessageDigest digest = MessageDigest.getInstance("SHA-256");
-          try (var in = Files.newInputStream(p)) {
+          try (java.io.InputStream in = Files.newInputStream(p)) {
             byte[] buffer = new byte[65536];
             int n;
             while ((n = in.read(buffer)) >= 0) {
@@ -211,7 +213,7 @@ public final class FileGdbEditSession implements AutoCloseable {
               digest.update(buffer, 0, n);
             }
           }
-          values.put(name, HexFormat.of().formatHex(digest.digest()));
+          values.put(name, toHex(digest.digest()));
         } catch (java.security.NoSuchAlgorithmException e) {
           throw new AssertionError(e);
         }
@@ -220,15 +222,27 @@ public final class FileGdbEditSession implements AutoCloseable {
     return values;
   }
 
+  private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+
+  private static String toHex(byte[] bytes) {
+    StringBuilder sb = new StringBuilder(bytes.length * 2);
+    for (byte b : bytes) {
+      sb.append(HEX_DIGITS[(b >> 4) & 0xF]);
+      sb.append(HEX_DIGITS[b & 0xF]);
+    }
+    return sb.toString();
+  }
+
   private static void copy(Path root, Path target, Runnable cancellation) throws IOException {
-    try (var paths = Files.walk(root)) {
-      for (Path source : paths.toList()) {
+    try (Stream<Path> paths = Files.walk(root)) {
+      for (Path source : paths.collect(Collectors.toList())) {
         cancellation.run();
         Path dest = target.resolve(root.relativize(source));
         if (Files.isDirectory(source)) Files.createDirectory(dest);
         else
-          try (var in = Files.newInputStream(source);
-              var out = Files.newOutputStream(dest, StandardOpenOption.CREATE_NEW)) {
+          try (java.io.InputStream in = Files.newInputStream(source);
+              java.io.OutputStream out =
+                  Files.newOutputStream(dest, StandardOpenOption.CREATE_NEW)) {
             byte[] buffer = new byte[65536];
             int n;
             while ((n = in.read(buffer)) >= 0) {
@@ -242,8 +256,9 @@ public final class FileGdbEditSession implements AutoCloseable {
 
   private static void remove(Path root) throws IOException {
     if (!Files.exists(root)) return;
-    try (var paths = Files.walk(root)) {
-      for (Path p : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
+    try (Stream<Path> paths = Files.walk(root)) {
+      for (Path p : paths.sorted(Comparator.reverseOrder()).collect(Collectors.toList()))
+        Files.delete(p);
     }
   }
 

@@ -41,6 +41,14 @@ subprojects {
         options.encoding = 'UTF-8'
     }
 
+    // The three runtime modules must be consumable on Java 8 (claeis/ili2db
+    // baseline). Build with the JDK 21 toolchain, emit Java 8 bytecode.
+    if (runtimeModuleNames.contains(project.name)) {
+        tasks.named('compileJava') {
+            options.release = 8
+        }
+    }
+
     tasks.withType(Test).configureEach {
         javaLauncher = javaToolchains.launcherFor {
             languageVersion = JavaLanguageVersion.of(providers.gradleProperty('testJavaVersion').getOrElse('21'))
@@ -104,5 +112,38 @@ tasks.register('publishSnapshots') {
     dependsOn 'verifySnapshotPublication'
     dependsOn runtimeModuleNames.collect { moduleName ->
         ":${moduleName}:publishMavenJavaPublicationToInterlisGuruSnapshotsRepository"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API compatibility gate
+//
+// Downstream consumers (for example hop-vector-raster-plugin) compile against
+// the public API of the three runtime modules. The API baseline in
+// tools/api/baseline is generated from a known-good build; verifyApiCompatibility
+// fails if a public class or member is removed or its signature changes.
+// Additive changes are allowed.
+// ---------------------------------------------------------------------------
+tasks.register('verifyApiCompatibility', Exec) {
+    group = 'verification'
+    description = 'Fails if a public API entry of the runtime modules was removed or changed.'
+    dependsOn runtimeModuleNames.collect { moduleName -> ":${moduleName}:jar" }
+    doFirst {
+        def jars = runtimeModuleNames.collect { moduleName ->
+            project(":${moduleName}").tasks.named('jar').get().archiveFile.get().asFile.absolutePath
+        }
+        commandLine(['python3', 'tools/api/api.py', 'check', 'tools/api/baseline'] + jars)
+    }
+}
+
+tasks.register('updateApiBaseline', Exec) {
+    group = 'verification'
+    description = 'Regenerates tools/api/baseline from the current build.'
+    dependsOn runtimeModuleNames.collect { moduleName -> ":${moduleName}:jar" }
+    doFirst {
+        def jars = runtimeModuleNames.collect { moduleName ->
+            project(":${moduleName}").tasks.named('jar').get().archiveFile.get().asFile.absolutePath
+        }
+        commandLine(['python3', 'tools/api/api.py', 'dump', 'tools/api/baseline'] + jars)
     }
 }

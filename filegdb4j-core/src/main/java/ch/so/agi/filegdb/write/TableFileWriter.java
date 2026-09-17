@@ -55,7 +55,8 @@ public final class TableFileWriter implements AutoCloseable {
   private final boolean hasZ;
   private final boolean hasM;
   private final List<FileGdbField> attributeFields = new ArrayList<>();
-  private final Set<String> fieldNames = new HashSet<>(Set.of("objectid"));
+  private final Set<String> fieldNames =
+      new HashSet<>(java.util.Collections.singletonList("objectid"));
   private List<FileGdbField> physicalFields;
   private FileGdbGeomField geometryField;
   private int geometryFieldIndex = -1;
@@ -90,8 +91,9 @@ public final class TableFileWriter implements AutoCloseable {
       Runnable cancellation)
       throws IOException {
     cancellation.run();
-    try (var source = ch.so.agi.filegdb.table.FileGdbTableFile.open(path, metadata)) {
-      var layout = source.writeLayout();
+    try (ch.so.agi.filegdb.table.FileGdbTableFile source =
+        ch.so.agi.filegdb.table.FileGdbTableFile.open(path, metadata)) {
+      ch.so.agi.filegdb.table.FileGdbTableFile.WriteLayout layout = source.writeLayout();
       if (layout.version() != 3 || !source.reliableObjectIds())
         throw new GdbException(
             "Append requires a version 3 table with reliable OBJECTIDs: " + path);
@@ -130,7 +132,7 @@ public final class TableFileWriter implements AutoCloseable {
     geometryKind = source.geometryKind();
     hasZ = source.hasZ();
     hasM = source.hasM();
-    var layout = source.writeLayout();
+    ch.so.agi.filegdb.table.FileGdbTableFile.WriteLayout layout = source.writeLayout();
     offsetWidth = layout.offsetWidth();
     if (offsetWidth == 0) {
       ByteBuffer header = ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN);
@@ -145,7 +147,7 @@ public final class TableFileWriter implements AutoCloseable {
         physicalFields.stream()
             .filter(
                 f -> f.type() != FileGdbFieldType.OBJECTID && f.type() != FileGdbFieldType.GEOMETRY)
-            .toList());
+            .collect(java.util.stream.Collectors.toList()));
     geometryField = source.geomField();
     geometryFieldIndex = source.geomFieldIndex();
     nullableCount = (int) physicalFields.stream().filter(FileGdbField::nullable).count();
@@ -174,9 +176,11 @@ public final class TableFileWriter implements AutoCloseable {
       for (long i = 0; i < totalRecordCount; i++) {
         cancellation.run();
         Object[] row = source.readRow(i);
-        if (row != null && row[geometryFieldIndex] instanceof FileGdbGeometry g) {
+        if (row != null && row[geometryFieldIndex] instanceof FileGdbGeometry) {
+          FileGdbGeometry g = (FileGdbGeometry) row[geometryFieldIndex];
           updateExtent(g);
-          var b = ch.so.agi.filegdb.geometry.GeometryBounds.of(g);
+          ch.so.agi.filegdb.geometry.Envelope b =
+              ch.so.agi.filegdb.geometry.GeometryBounds.of(g);
           if (b != null) {
             include(new FileGdbPoint(b.xMin(), b.yMin()));
             include(new FileGdbPoint(b.xMax(), b.yMax()));
@@ -333,7 +337,7 @@ public final class TableFileWriter implements AutoCloseable {
               geometryField.alias(),
               geometryField.nullable(),
               geometryField.wkt(),
-              geometryField.geometry().withGridResolution(List.of(1.0)));
+              geometryField.geometry().withGridResolution(java.util.Collections.singletonList(1.0)));
   }
 
   public Path path() {
@@ -358,7 +362,7 @@ public final class TableFileWriter implements AutoCloseable {
   public void addField(FileGdbField field) {
     if (field.defaultValue() != null
         && (!field.editable()
-            || java.util.Set.of(
+            || java.util.EnumSet.of(
                     FileGdbFieldType.BINARY,
                     FileGdbFieldType.GUID,
                     FileGdbFieldType.GLOBALID,
@@ -546,7 +550,8 @@ public final class TableFileWriter implements AutoCloseable {
         buffer.bytes(shape);
         FileGdbGeometry stored = GeometryCodec.decode(shape, geometryField.geometry());
         updateExtent(stored);
-        var bounds = ch.so.agi.filegdb.geometry.GeometryBounds.of(stored);
+        ch.so.agi.filegdb.geometry.Envelope bounds =
+            ch.so.agi.filegdb.geometry.GeometryBounds.of(stored);
         if (bounds != null) {
           include(new FileGdbPoint(bounds.xMin(), bounds.yMin()));
           include(new FileGdbPoint(bounds.xMax(), bounds.yMax()));
@@ -584,40 +589,59 @@ public final class TableFileWriter implements AutoCloseable {
 
   private void encodeAttribute(BinaryBuffer buffer, FileGdbField field, Object value) {
     switch (field.type()) {
-      case INT16 -> buffer.i16(((Number) value).shortValue());
-      case INT32 -> buffer.i32(((Number) value).intValue());
-      case INT64 -> buffer.i64(((Number) value).longValue());
-      case FLOAT32 -> buffer.f32(((Number) value).floatValue());
-      case FLOAT64 -> buffer.f64(((Number) value).doubleValue());
-      case STRING, XML -> {
-        byte[] bytes =
+      case INT16:
+        buffer.i16(((Number) value).shortValue());
+        break;
+      case INT32:
+        buffer.i32(((Number) value).intValue());
+        break;
+      case INT64:
+        buffer.i64(((Number) value).longValue());
+        break;
+      case FLOAT32:
+        buffer.f32(((Number) value).floatValue());
+        break;
+      case FLOAT64:
+        buffer.f64(((Number) value).doubleValue());
+        break;
+      case STRING:
+      case XML:
+        byte[] textBytes =
             value
                 .toString()
                 .getBytes(
                     field.type() == FileGdbFieldType.STRING && !stringsUtf8
                         ? StandardCharsets.UTF_16LE
                         : StandardCharsets.UTF_8);
-        buffer.varUInt(bytes.length);
-        buffer.bytes(bytes);
-      }
-      case BINARY -> {
+        buffer.varUInt(textBytes.length);
+        buffer.bytes(textBytes);
+        break;
+      case BINARY:
         byte[] bytes = (byte[]) value;
         buffer.varUInt(bytes.length);
         buffer.bytes(bytes);
-      }
-      case GUID, GLOBALID -> buffer.bytes(uuidBytes(value));
-      case DATETIME -> buffer.f64(dateTimeToDays(toLocalDateTime(value), field.highPrecision()));
-      case DATE -> buffer.f64(dateTimeToDays(toLocalDate(value).atStartOfDay(), false));
-      case TIME -> {
+        break;
+      case GUID:
+      case GLOBALID:
+        buffer.bytes(uuidBytes(value));
+        break;
+      case DATETIME:
+        buffer.f64(dateTimeToDays(toLocalDateTime(value), field.highPrecision()));
+        break;
+      case DATE:
+        buffer.f64(dateTimeToDays(toLocalDate(value).atStartOfDay(), false));
+        break;
+      case TIME:
         LocalTime time = toLocalTime(value);
         buffer.f64((time.toSecondOfDay() + time.getNano() / 1e9) / 86400.0);
-      }
-      case DATETIME_WITH_OFFSET -> {
+        break;
+      case DATETIME_WITH_OFFSET:
         OffsetDateTime dateTime = toOffsetDateTime(value);
         buffer.f64(dateTimeToDays(dateTime.toLocalDateTime(), true));
         buffer.i16((short) (dateTime.getOffset().getTotalSeconds() / 60));
-      }
-      default -> throw new GdbException("Unsupported field type for writing: " + field.type());
+        break;
+      default:
+        throw new GdbException("Unsupported field type for writing: " + field.type());
     }
   }
 
@@ -630,64 +654,65 @@ public final class TableFileWriter implements AutoCloseable {
   }
 
   private static LocalDateTime toLocalDateTime(Object value) {
-    if (value instanceof LocalDateTime dateTime) {
-      return dateTime;
+    if (value instanceof LocalDateTime) {
+      return (LocalDateTime) value;
     }
-    if (value instanceof LocalDate date) {
-      return date.atStartOfDay();
+    if (value instanceof LocalDate) {
+      return ((LocalDate) value).atStartOfDay();
     }
-    if (value instanceof OffsetDateTime dateTime) {
-      return dateTime.toLocalDateTime();
+    if (value instanceof OffsetDateTime) {
+      return ((OffsetDateTime) value).toLocalDateTime();
     }
-    if (value instanceof java.util.Date date) {
-      return LocalDateTime.ofInstant(date.toInstant(), ZoneOffset.UTC);
+    if (value instanceof java.util.Date) {
+      return LocalDateTime.ofInstant(((java.util.Date) value).toInstant(), ZoneOffset.UTC);
     }
     throw new GdbException("Unsupported datetime value: " + value.getClass().getName());
   }
 
   private static LocalDate toLocalDate(Object value) {
-    if (value instanceof LocalDate date) {
-      return date;
+    if (value instanceof LocalDate) {
+      return (LocalDate) value;
     }
-    if (value instanceof LocalDateTime dateTime) {
-      return dateTime.toLocalDate();
+    if (value instanceof LocalDateTime) {
+      return ((LocalDateTime) value).toLocalDate();
     }
-    if (value instanceof OffsetDateTime dateTime) {
-      return dateTime.toLocalDate();
+    if (value instanceof OffsetDateTime) {
+      return ((OffsetDateTime) value).toLocalDate();
     }
-    if (value instanceof java.util.Date date) {
-      return LocalDateTime.ofInstant(date.toInstant(), ZoneOffset.UTC).toLocalDate();
+    if (value instanceof java.util.Date) {
+      return LocalDateTime.ofInstant(((java.util.Date) value).toInstant(), ZoneOffset.UTC)
+          .toLocalDate();
     }
     throw new GdbException("Unsupported date value: " + value.getClass().getName());
   }
 
   private static LocalTime toLocalTime(Object value) {
-    if (value instanceof LocalTime time) {
-      return time;
+    if (value instanceof LocalTime) {
+      return (LocalTime) value;
     }
-    if (value instanceof LocalDateTime dateTime) {
-      return dateTime.toLocalTime();
+    if (value instanceof LocalDateTime) {
+      return ((LocalDateTime) value).toLocalTime();
     }
-    if (value instanceof OffsetDateTime dateTime) {
-      return dateTime.toLocalTime();
+    if (value instanceof OffsetDateTime) {
+      return ((OffsetDateTime) value).toLocalTime();
     }
     throw new GdbException("Unsupported time value: " + value.getClass().getName());
   }
 
   private static OffsetDateTime toOffsetDateTime(Object value) {
-    if (value instanceof OffsetDateTime dateTime) {
-      return dateTime;
+    if (value instanceof OffsetDateTime) {
+      return (OffsetDateTime) value;
     }
-    if (value instanceof LocalDateTime dateTime) {
-      return dateTime.atOffset(ZoneOffset.UTC);
+    if (value instanceof LocalDateTime) {
+      return ((LocalDateTime) value).atOffset(ZoneOffset.UTC);
     }
     throw new GdbException("Unsupported offset datetime value: " + value.getClass().getName());
   }
 
   private static byte[] uuidBytes(Object value) {
     UUID uuid;
-    if (value instanceof UUID typed) {
-      uuid = typed;
+    if (value instanceof UUID) {
+      uuid = (UUID) value;
     } else {
       String text = value.toString().replace("{", "").replace("}", "").trim();
       uuid = UUID.fromString(text);
@@ -710,20 +735,20 @@ public final class TableFileWriter implements AutoCloseable {
   }
 
   private void updateExtent(FileGdbGeometry geometry) {
-    if (geometry instanceof FileGdbPoint point) {
-      include(point);
-    } else if (geometry instanceof FileGdbMultiPoint multiPoint) {
-      for (FileGdbPoint point : multiPoint.points()) {
+    if (geometry instanceof FileGdbPoint) {
+      include((FileGdbPoint) geometry);
+    } else if (geometry instanceof FileGdbMultiPoint) {
+      for (FileGdbPoint point : ((FileGdbMultiPoint) geometry).points()) {
         include(point);
       }
-    } else if (geometry instanceof FileGdbPolyline polyline) {
-      for (FileGdbPart part : polyline.parts()) {
+    } else if (geometry instanceof FileGdbPolyline) {
+      for (FileGdbPart part : ((FileGdbPolyline) geometry).parts()) {
         for (FileGdbPoint point : part.points()) {
           include(point);
         }
       }
-    } else if (geometry instanceof FileGdbPolygon polygon) {
-      for (FileGdbPart part : polygon.parts()) {
+    } else if (geometry instanceof FileGdbPolygon) {
+      for (FileGdbPart part : ((FileGdbPolygon) geometry).parts()) {
         for (FileGdbPoint point : part.points()) {
           include(point);
         }
@@ -756,7 +781,7 @@ public final class TableFileWriter implements AutoCloseable {
     int flags =
         (field.nullable() ? 1 : 0) | (field.required() ? 2 : 0) | (field.editable() ? 4 : 0);
     switch (field.type()) {
-      case STRING -> {
+      case STRING: {
         buffer.u32(field.maxWidth());
         buffer.u8(flags);
         byte[] defaults =
@@ -768,20 +793,26 @@ public final class TableFileWriter implements AutoCloseable {
                     .getBytes(stringsUtf8 ? StandardCharsets.UTF_8 : StandardCharsets.UTF_16LE);
         buffer.varUInt(defaults.length);
         buffer.bytes(defaults);
+        break;
       }
-      case OBJECTID -> {
+      case OBJECTID: {
         buffer.u8(4);
         buffer.u8(2);
+        break;
       }
-      case BINARY, XML -> {
+      case BINARY:
+      case XML: {
         buffer.u8(0);
         buffer.u8(flags);
+        break;
       }
-      case GUID, GLOBALID -> {
+      case GUID:
+      case GLOBALID: {
         buffer.u8(38);
         buffer.u8(flags);
+        break;
       }
-      case GEOMETRY -> {
+      case GEOMETRY: {
         buffer.u8(0);
         buffer.u8(flags);
         GeometryFieldDefinition definition = geometryField.geometry();
@@ -824,30 +855,46 @@ public final class TableFileWriter implements AutoCloseable {
         buffer.u8(0);
         List<Double> gridResolution = definition.spatialIndexGridResolution();
         if (gridResolution.isEmpty()) {
-          gridResolution = List.of(1000.0);
+          gridResolution = java.util.Collections.singletonList(1000.0);
         }
         buffer.u32(gridResolution.size());
         geometryFieldGridResOffset = buffer.size();
         for (double grid : gridResolution) {
           buffer.f64(grid);
         }
+        break;
       }
-      default -> {
-        int size =
-            switch (field.type()) {
-              case INT16 -> 2;
-              case INT32, FLOAT32 -> 4;
-              case FLOAT64, DATETIME, DATE, TIME -> 8;
-              case INT64 -> 8;
-              case DATETIME_WITH_OFFSET -> 10;
-              default -> 0;
-            };
+      default: {
+        int size;
+        switch (field.type()) {
+          case INT16:
+            size = 2;
+            break;
+          case INT32:
+          case FLOAT32:
+            size = 4;
+            break;
+          case INT64:
+          case FLOAT64:
+          case DATETIME:
+          case DATE:
+          case TIME:
+            size = 8;
+            break;
+          case DATETIME_WITH_OFFSET:
+            size = 10;
+            break;
+          default:
+            size = 0;
+            break;
+        }
         buffer.u8(size);
         buffer.u8(flags);
         BinaryBuffer defaults = new BinaryBuffer(16);
         if (field.defaultValue() != null) encodeAttribute(defaults, field, field.defaultValue());
         buffer.u8(defaults.size());
         buffer.bytes(defaults.toByteArray());
+        break;
       }
     }
   }

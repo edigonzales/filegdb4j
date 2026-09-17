@@ -1,0 +1,531 @@
+class public final class ch.so.agi.filegdb.FileGdbEditSession implements java.lang.AutoCloseable
+  public ch.so.agi.filegdb.FileGeodatabase database();
+  public static ch.so.agi.filegdb.FileGdbEditSession open(java.nio.file.Path, boolean, java.lang.Runnable) throws java.io.IOException;
+  public void close() throws java.io.IOException;
+  public void commit() throws java.io.IOException;
+class public final class ch.so.agi.filegdb.FileGeodatabase implements java.lang.AutoCloseable
+  public boolean isWritable();
+  public ch.so.agi.filegdb.catalog.GdbCatalog catalog();
+  public ch.so.agi.filegdb.table.FileGdbTable featureClass(java.lang.String) throws java.io.IOException;
+  public ch.so.agi.filegdb.table.FileGdbTable table(java.lang.String) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbFeatureWriter appendFeatures(java.lang.String, boolean) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbFeatureWriter createFeatureClass(ch.so.agi.filegdb.write.FeatureClassDefinition) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbTableWriter appendRows(java.lang.String) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbTableWriter createTable(ch.so.agi.filegdb.write.TableDefinition) throws java.io.IOException;
+  public java.nio.file.Path path();
+  public java.util.List<ch.so.agi.filegdb.catalog.Dataset> datasets();
+  public java.util.List<ch.so.agi.filegdb.catalog.Dataset> featureClasses();
+  public java.util.List<ch.so.agi.filegdb.catalog.Dataset> tables();
+  public java.util.List<ch.so.agi.filegdb.catalog.Domain> domains();
+  public java.util.List<ch.so.agi.filegdb.catalog.GdbItem> items();
+  public java.util.List<ch.so.agi.filegdb.catalog.RelationshipClass> relationships();
+  public java.util.Optional<ch.so.agi.filegdb.catalog.Dataset> dataset(java.lang.String);
+  public java.util.Optional<ch.so.agi.filegdb.catalog.Domain> domain(java.lang.String);
+  public static ch.so.agi.filegdb.FileGdbEditSession edit(java.nio.file.Path) throws java.io.IOException;
+  public static ch.so.agi.filegdb.FileGeodatabase create(java.nio.file.Path) throws java.io.IOException;
+  public static ch.so.agi.filegdb.FileGeodatabase open(java.nio.file.Path) throws java.io.IOException;
+  public void close() throws java.io.IOException;
+  public void createDomain(ch.so.agi.filegdb.catalog.Domain) throws java.io.IOException;
+  public void createRelationship(ch.so.agi.filegdb.write.RelationshipDefinition) throws java.io.IOException;
+  public void validateAppend(java.lang.String) throws java.io.IOException;
+class public class ch.so.agi.filegdb.GdbException extends java.lang.RuntimeException
+  public ch.so.agi.filegdb.GdbException(java.lang.String);
+  public ch.so.agi.filegdb.GdbException(java.lang.String, java.lang.Throwable);
+class public final class ch.so.agi.filegdb.catalog.CodedValue
+  public ch.so.agi.filegdb.catalog.CodedValue(java.lang.String, java.lang.String);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String code();
+  public java.lang.String name();
+class public final class ch.so.agi.filegdb.catalog.CodedValueDomain implements ch.so.agi.filegdb.catalog.Domain
+  public ch.so.agi.filegdb.catalog.CodedValueDomain(java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, java.lang.String, java.util.List<ch.so.agi.filegdb.catalog.CodedValue>);
+  public ch.so.agi.filegdb.catalog.CodedValueDomain(java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, java.lang.String, java.util.List<ch.so.agi.filegdb.catalog.CodedValue>, ch.so.agi.filegdb.catalog.DomainSplitPolicy, ch.so.agi.filegdb.catalog.DomainMergePolicy);
+  public ch.so.agi.filegdb.catalog.DomainMergePolicy mergePolicy();
+  public ch.so.agi.filegdb.catalog.DomainSplitPolicy splitPolicy();
+  public ch.so.agi.filegdb.table.FileGdbFieldType fieldType();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String description();
+  public java.lang.String name();
+  public java.util.List<ch.so.agi.filegdb.catalog.CodedValue> values();
+class public final class ch.so.agi.filegdb.catalog.CrsDefinition
+  public boolean isDefined();
+  public ch.so.agi.filegdb.catalog.CrsDefinition(int, java.lang.Integer, java.lang.String);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int effectiveWkid();
+  public int wkid();
+  public java.lang.Integer latestWkid();
+  public java.lang.String wkt();
+  public static final ch.so.agi.filegdb.catalog.CrsDefinition UNKNOWN;
+class public final class ch.so.agi.filegdb.catalog.Dataset
+  public boolean isFeatureClass();
+  public ch.so.agi.filegdb.catalog.CrsDefinition crs();
+  public ch.so.agi.filegdb.catalog.Dataset(java.lang.String, ch.so.agi.filegdb.catalog.DatasetKind, int, java.nio.file.Path, java.lang.String, ch.so.agi.filegdb.catalog.CrsDefinition);
+  public ch.so.agi.filegdb.catalog.DatasetKind kind();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int tableNumber();
+  public java.lang.String definition();
+  public java.lang.String name();
+  public java.nio.file.Path tableFile();
+class public final class ch.so.agi.filegdb.catalog.DatasetKind extends java.lang.Enum<ch.so.agi.filegdb.catalog.DatasetKind>
+  public static ch.so.agi.filegdb.catalog.DatasetKind valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.DatasetKind[] values();
+  public static final ch.so.agi.filegdb.catalog.DatasetKind FEATURE_CLASS;
+  public static final ch.so.agi.filegdb.catalog.DatasetKind TABLE;
+class public final class ch.so.agi.filegdb.catalog.DefinitionXml
+  public static boolean contains(java.lang.String, java.lang.String);
+  public static ch.so.agi.filegdb.catalog.CrsDefinition crs(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.Domain domain(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.RelationshipClass relationship(java.lang.String);
+  public static java.lang.String unsupportedEditingReason(java.lang.String);
+  public static java.lang.String withStorageExtent(java.lang.String, ch.so.agi.filegdb.geometry.Envelope, boolean);
+  public static java.util.Map<java.lang.String, ch.so.agi.filegdb.table.FieldMetadata> fieldInfo(java.lang.String);
+class public interface ch.so.agi.filegdb.catalog.Domain
+  public abstract ch.so.agi.filegdb.catalog.DomainMergePolicy mergePolicy();
+  public abstract ch.so.agi.filegdb.catalog.DomainSplitPolicy splitPolicy();
+  public abstract ch.so.agi.filegdb.table.FileGdbFieldType fieldType();
+  public abstract java.lang.String description();
+  public abstract java.lang.String name();
+  public default java.util.List<ch.so.agi.filegdb.catalog.CodedValue> values();
+class public final class ch.so.agi.filegdb.catalog.DomainMergePolicy extends java.lang.Enum<ch.so.agi.filegdb.catalog.DomainMergePolicy>
+  public java.lang.String xml();
+  public static ch.so.agi.filegdb.catalog.DomainMergePolicy fromXml(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.DomainMergePolicy valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.DomainMergePolicy[] values();
+  public static final ch.so.agi.filegdb.catalog.DomainMergePolicy AREA_WEIGHTED;
+  public static final ch.so.agi.filegdb.catalog.DomainMergePolicy DEFAULT_VALUE;
+  public static final ch.so.agi.filegdb.catalog.DomainMergePolicy SUM_VALUES;
+class public final class ch.so.agi.filegdb.catalog.DomainSplitPolicy extends java.lang.Enum<ch.so.agi.filegdb.catalog.DomainSplitPolicy>
+  public java.lang.String xml();
+  public static ch.so.agi.filegdb.catalog.DomainSplitPolicy fromXml(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.DomainSplitPolicy valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.DomainSplitPolicy[] values();
+  public static final ch.so.agi.filegdb.catalog.DomainSplitPolicy DEFAULT_VALUE;
+  public static final ch.so.agi.filegdb.catalog.DomainSplitPolicy DUPLICATE;
+  public static final ch.so.agi.filegdb.catalog.DomainSplitPolicy GEOMETRY_RATIO;
+class public final class ch.so.agi.filegdb.catalog.DomainValues
+  public static boolean contains(ch.so.agi.filegdb.catalog.Domain, java.lang.String);
+  public static boolean equivalent(ch.so.agi.filegdb.catalog.Domain, ch.so.agi.filegdb.catalog.Domain);
+  public static java.lang.Comparable<?> parse(ch.so.agi.filegdb.table.FileGdbFieldType, java.lang.String);
+  public static void validate(ch.so.agi.filegdb.catalog.Domain);
+class class ch.so.agi.filegdb.catalog.DomainValues$1
+class public final class ch.so.agi.filegdb.catalog.GdbCatalog
+  public int tableNumber(java.lang.String);
+  public java.util.List<ch.so.agi.filegdb.catalog.Dataset> datasets();
+  public java.util.List<ch.so.agi.filegdb.catalog.Domain> domains();
+  public java.util.List<ch.so.agi.filegdb.catalog.GdbItem> items();
+  public java.util.List<ch.so.agi.filegdb.catalog.RelationshipClass> relationships();
+  public java.util.List<java.lang.String> tableNames();
+  public java.util.Optional<ch.so.agi.filegdb.catalog.Dataset> dataset(java.lang.String);
+  public java.util.Optional<ch.so.agi.filegdb.catalog.Domain> domain(java.lang.String);
+  public java.util.Optional<java.nio.file.Path> tableFile(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.GdbCatalog open(java.nio.file.Path) throws java.io.IOException;
+class public final class ch.so.agi.filegdb.catalog.GdbItem
+  public ch.so.agi.filegdb.catalog.GdbItem(java.util.UUID, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, int);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int tableNumber();
+  public java.lang.String definition();
+  public java.lang.String documentation();
+  public java.lang.String name();
+  public java.lang.String path();
+  public java.lang.String type();
+  public java.util.UUID uuid();
+class public final class ch.so.agi.filegdb.catalog.RangeDomain implements ch.so.agi.filegdb.catalog.Domain
+  public ch.so.agi.filegdb.catalog.DomainMergePolicy mergePolicy();
+  public ch.so.agi.filegdb.catalog.DomainSplitPolicy splitPolicy();
+  public ch.so.agi.filegdb.catalog.RangeDomain(java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, java.lang.String, java.lang.String, java.lang.String);
+  public ch.so.agi.filegdb.catalog.RangeDomain(java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, java.lang.String, java.lang.String, java.lang.String, ch.so.agi.filegdb.catalog.DomainSplitPolicy, ch.so.agi.filegdb.catalog.DomainMergePolicy);
+  public ch.so.agi.filegdb.table.FileGdbFieldType fieldType();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String description();
+  public java.lang.String maxValue();
+  public java.lang.String minValue();
+  public java.lang.String name();
+class public final class ch.so.agi.filegdb.catalog.RelationshipCardinality extends java.lang.Enum<ch.so.agi.filegdb.catalog.RelationshipCardinality>
+  public static ch.so.agi.filegdb.catalog.RelationshipCardinality valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.RelationshipCardinality[] values();
+  public static final ch.so.agi.filegdb.catalog.RelationshipCardinality MANY_TO_MANY;
+  public static final ch.so.agi.filegdb.catalog.RelationshipCardinality ONE_TO_MANY;
+  public static final ch.so.agi.filegdb.catalog.RelationshipCardinality ONE_TO_ONE;
+  public static final ch.so.agi.filegdb.catalog.RelationshipCardinality UNKNOWN;
+class public final class ch.so.agi.filegdb.catalog.RelationshipClass
+  public boolean attachment();
+  public boolean attributed();
+  public boolean composite();
+  public ch.so.agi.filegdb.catalog.RelationshipCardinality cardinality();
+  public ch.so.agi.filegdb.catalog.RelationshipClass(java.lang.String, java.lang.String, java.lang.String, ch.so.agi.filegdb.catalog.RelationshipCardinality, java.lang.String, java.lang.String, boolean, boolean, boolean, java.util.List<ch.so.agi.filegdb.catalog.RelationshipKey>, java.util.List<ch.so.agi.filegdb.catalog.RelationshipKey>);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String backwardLabel();
+  public java.lang.String destinationClassName();
+  public java.lang.String forwardLabel();
+  public java.lang.String name();
+  public java.lang.String originClassName();
+  public java.util.List<ch.so.agi.filegdb.catalog.RelationshipKey> destinationKeys();
+  public java.util.List<ch.so.agi.filegdb.catalog.RelationshipKey> originKeys();
+class public final class ch.so.agi.filegdb.catalog.RelationshipKey
+  public ch.so.agi.filegdb.catalog.RelationshipKey$Role role();
+  public ch.so.agi.filegdb.catalog.RelationshipKey(java.lang.String, ch.so.agi.filegdb.catalog.RelationshipKey$Role);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String objectKeyName();
+class public final class ch.so.agi.filegdb.catalog.RelationshipKey$Role extends java.lang.Enum<ch.so.agi.filegdb.catalog.RelationshipKey$Role>
+  public static ch.so.agi.filegdb.catalog.RelationshipKey$Role valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.catalog.RelationshipKey$Role[] values();
+  public static final ch.so.agi.filegdb.catalog.RelationshipKey$Role DESTINATION_FOREIGN;
+  public static final ch.so.agi.filegdb.catalog.RelationshipKey$Role DESTINATION_PRIMARY;
+  public static final ch.so.agi.filegdb.catalog.RelationshipKey$Role ORIGIN_FOREIGN;
+  public static final ch.so.agi.filegdb.catalog.RelationshipKey$Role ORIGIN_PRIMARY;
+  public static final ch.so.agi.filegdb.catalog.RelationshipKey$Role UNKNOWN;
+class public final class ch.so.agi.filegdb.index.SpatialIndex
+  public static double build(java.nio.file.Path) throws java.io.IOException;
+  public static double build(java.nio.file.Path, java.lang.Runnable) throws java.io.IOException;
+  public static java.nio.file.Path path(java.nio.file.Path);
+  public static java.util.SortedSet<java.lang.Long> candidates(java.nio.file.Path, java.util.List<java.lang.Double>, ch.so.agi.filegdb.geometry.Envelope) throws java.io.IOException;
+  public static void validate(java.nio.file.Path, java.util.List<java.lang.Double>, java.lang.Runnable) throws java.io.IOException;
+class final class ch.so.agi.filegdb.index.SpatialIndex$Entry implements java.lang.Comparable<ch.so.agi.filegdb.index.SpatialIndex$Entry>
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int compareTo(ch.so.agi.filegdb.index.SpatialIndex$Entry);
+  public int compareTo(java.lang.Object);
+  public long id();
+  public long key();
+class final class ch.so.agi.filegdb.index.SpatialIndex$Head
+  public ch.so.agi.filegdb.index.SpatialIndex$Entry entry();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int run();
+class final class ch.so.agi.filegdb.index.SpatialIndex$Node
+class public final class ch.so.agi.filegdb.io.ByteCursor
+  public byte[] bytes(int);
+  public ch.so.agi.filegdb.io.ByteCursor(byte[]);
+  public ch.so.agi.filegdb.io.ByteCursor(byte[], int, int);
+  public double f64();
+  public float f32();
+  public int i32();
+  public int position();
+  public int remaining();
+  public int u16();
+  public int u8();
+  public java.lang.String utf16(int);
+  public java.lang.String utf8(int);
+  public long i64();
+  public long u32();
+  public long varIntDelta();
+  public long varUInt32();
+  public long varUInt64();
+  public short i16();
+  public void skip(int);
+class public final class ch.so.agi.filegdb.io.GdbPaths
+  public static boolean isFileGeodatabase(java.nio.file.Path);
+  public static java.lang.String tableFileName(int);
+  public static java.nio.file.Path companion(java.nio.file.Path, java.lang.String);
+  public static java.nio.file.Path tableFile(java.nio.file.Path, int);
+class public final class ch.so.agi.filegdb.table.FieldMetadata
+  public boolean highPrecision();
+  public ch.so.agi.filegdb.table.FieldMetadata(java.lang.String, boolean);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String domain();
+  public static final ch.so.agi.filegdb.table.FieldMetadata EMPTY;
+class public final class ch.so.agi.filegdb.table.FileGdbField
+  public boolean editable();
+  public boolean highPrecision();
+  public boolean nullable();
+  public boolean required();
+  public ch.so.agi.filegdb.table.FileGdbField asNullable();
+  public ch.so.agi.filegdb.table.FileGdbField asRequired();
+  public ch.so.agi.filegdb.table.FileGdbField notEditable();
+  public ch.so.agi.filegdb.table.FileGdbField withAlias(java.lang.String);
+  public ch.so.agi.filegdb.table.FileGdbField withDefaultValue(java.lang.Object);
+  public ch.so.agi.filegdb.table.FileGdbField withDomain(java.lang.String);
+  public ch.so.agi.filegdb.table.FileGdbField withHighPrecision();
+  public ch.so.agi.filegdb.table.FileGdbField(java.lang.String, java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, boolean, boolean, boolean, int);
+  public ch.so.agi.filegdb.table.FileGdbField(java.lang.String, java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, boolean, boolean, boolean, int, boolean, java.lang.String);
+  public ch.so.agi.filegdb.table.FileGdbField(java.lang.String, java.lang.String, ch.so.agi.filegdb.table.FileGdbFieldType, boolean, boolean, boolean, int, boolean, java.lang.String, java.lang.Object);
+  public ch.so.agi.filegdb.table.FileGdbFieldType type();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int maxWidth();
+  public java.lang.Object defaultValue();
+  public java.lang.String alias();
+  public java.lang.String domain();
+  public java.lang.String name();
+  public static ch.so.agi.filegdb.table.FileGdbField bigInteger(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField binary(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField dateTime(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField globalId(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField guid(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField integer(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField real(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField smallInteger(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbField string(java.lang.String, int);
+  public static ch.so.agi.filegdb.table.FileGdbField xml(java.lang.String);
+class public final class ch.so.agi.filegdb.table.FileGdbFieldType extends java.lang.Enum<ch.so.agi.filegdb.table.FileGdbFieldType>
+  public int id();
+  public static ch.so.agi.filegdb.table.FileGdbFieldType fromId(int);
+  public static ch.so.agi.filegdb.table.FileGdbFieldType valueOf(java.lang.String);
+  public static ch.so.agi.filegdb.table.FileGdbFieldType[] values();
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType BINARY;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType DATE;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType DATETIME;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType DATETIME_WITH_OFFSET;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType FLOAT32;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType FLOAT64;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType GEOMETRY;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType GLOBALID;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType GUID;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType INT16;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType INT32;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType INT64;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType OBJECTID;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType RASTER;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType STRING;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType TIME;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType UNDEFINED;
+  public static final ch.so.agi.filegdb.table.FileGdbFieldType XML;
+class public final class ch.so.agi.filegdb.table.FileGdbGeomField
+  public boolean nullable();
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition geometry();
+  public ch.so.agi.filegdb.table.FileGdbGeomField(java.lang.String, java.lang.String, boolean, java.lang.String, ch.so.agi.filegdb.geometry.GeometryFieldDefinition);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String alias();
+  public java.lang.String name();
+  public java.lang.String wkt();
+class public final class ch.so.agi.filegdb.table.FileGdbRow
+  public ch.so.agi.filegdb.geometry.FileGdbGeometry geometry();
+  public ch.so.agi.filegdb.table.FileGdbRow(long, java.util.List<ch.so.agi.filegdb.table.FileGdbField>, java.lang.Object[]);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.Object get(int);
+  public java.lang.Object get(java.lang.String);
+  public java.lang.Object[] values();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+  public long objectId();
+class public final class ch.so.agi.filegdb.table.FileGdbTable implements java.lang.AutoCloseable, java.lang.Iterable<ch.so.agi.filegdb.table.FileGdbRow>
+  public boolean isFeatureClass();
+  public ch.so.agi.filegdb.catalog.CrsDefinition crs();
+  public ch.so.agi.filegdb.catalog.Dataset dataset();
+  public ch.so.agi.filegdb.table.FileGdbGeomField geomField();
+  public ch.so.agi.filegdb.table.FileGdbRow read(long) throws java.io.IOException;
+  public ch.so.agi.filegdb.table.FileGdbTable$QueryResult query(ch.so.agi.filegdb.geometry.Envelope) throws java.io.IOException;
+  public ch.so.agi.filegdb.table.FileGdbTable$QueryResult query(ch.so.agi.filegdb.geometry.Envelope, boolean) throws java.io.IOException;
+  public ch.so.agi.filegdb.table.FileGdbTable(ch.so.agi.filegdb.catalog.Dataset) throws java.io.IOException;
+  public ch.so.agi.filegdb.table.FileGdbTable(ch.so.agi.filegdb.catalog.Dataset, java.util.Map<java.lang.String, ch.so.agi.filegdb.table.FieldMetadata>, ch.so.agi.filegdb.catalog.GdbCatalog) throws java.io.IOException;
+  public ch.so.agi.filegdb.table.FileGdbTableFile tableFile();
+  public int geomFieldIndex();
+  public int objectIdFieldIndex();
+  public java.lang.String name();
+  public java.nio.file.Path path();
+  public java.util.Iterator<ch.so.agi.filegdb.table.FileGdbRow> iterator();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+  public java.util.Optional<ch.so.agi.filegdb.catalog.Domain> domain(java.lang.String);
+  public java.util.Optional<ch.so.agi.filegdb.table.FileGdbField> field(java.lang.String);
+  public long rowCount();
+  public long totalRecordCount();
+  public void close() throws java.io.IOException;
+class public final class ch.so.agi.filegdb.table.FileGdbTable$QueryResult implements java.lang.Iterable<ch.so.agi.filegdb.table.FileGdbRow>
+  public boolean indexUsed();
+  public ch.so.agi.filegdb.table.FileGdbTable$QueryResult(java.util.List<ch.so.agi.filegdb.table.FileGdbRow>, boolean, long);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.util.Iterator<ch.so.agi.filegdb.table.FileGdbRow> iterator();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbRow> rows();
+  public long geometriesRead();
+class final class ch.so.agi.filegdb.table.FileGdbTable$RowIterator implements java.util.Iterator<ch.so.agi.filegdb.table.FileGdbRow>
+  public boolean hasNext();
+  public ch.so.agi.filegdb.table.FileGdbRow next();
+  public java.lang.Object next();
+class public final class ch.so.agi.filegdb.table.FileGdbTableFile implements java.lang.AutoCloseable
+  public boolean hasM();
+  public boolean hasZ();
+  public boolean reliableObjectIds();
+  public boolean stringsUtf8();
+  public ch.so.agi.filegdb.geometry.GeometryKind geometryKind();
+  public ch.so.agi.filegdb.table.FileGdbGeomField geomField();
+  public ch.so.agi.filegdb.table.FileGdbTableFile$WriteLayout writeLayout();
+  public int fieldDescriptorLength();
+  public int geomFieldIndex();
+  public int objectIdFieldIndex();
+  public int version();
+  public java.lang.Object[] readRow(long) throws java.io.IOException;
+  public java.nio.file.Path path();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+  public long headerBufferMaxSize();
+  public long totalRecordCount();
+  public long validRecordCount();
+  public static ch.so.agi.filegdb.table.FileGdbTableFile open(java.nio.file.Path) throws java.io.IOException;
+  public static ch.so.agi.filegdb.table.FileGdbTableFile open(java.nio.file.Path, java.util.Map<java.lang.String, ch.so.agi.filegdb.table.FieldMetadata>) throws java.io.IOException;
+  public void close() throws java.io.IOException;
+class class ch.so.agi.filegdb.table.FileGdbTableFile$1
+class final class ch.so.agi.filegdb.table.FileGdbTableFile$FieldParseResult
+  public ch.so.agi.filegdb.table.FileGdbGeomField geomField();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int geomFieldIndex();
+  public int nullableFieldCount();
+  public int objectIdFieldIndex();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+class final class ch.so.agi.filegdb.table.FileGdbTableFile$TableXHeader
+  public boolean reliable();
+  public byte[] blockMap();
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int offsetSize();
+  public long totalRecordCount();
+class public final class ch.so.agi.filegdb.table.FileGdbTableFile$WriteLayout
+  public byte[] blockMap();
+  public ch.so.agi.filegdb.table.FileGdbTableFile$WriteLayout(int, long, int, byte[], long, long);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public int offsetWidth();
+  public int version();
+  public long descriptorOffset();
+  public long extentOffset();
+  public long gridOffset();
+class public final class ch.so.agi.filegdb.write.BinaryBuffer
+  public byte[] toByteArray();
+  public ch.so.agi.filegdb.write.BinaryBuffer();
+  public ch.so.agi.filegdb.write.BinaryBuffer(int);
+  public int size();
+  public void ascii(java.lang.String);
+  public void bytes(byte[]);
+  public void f32(float);
+  public void f64(double);
+  public void i16(short);
+  public void i32(int);
+  public void i64(long);
+  public void patchU32(int, long);
+  public void patchU8(int, int);
+  public void u16(int);
+  public void u32(long);
+  public void u8(int);
+  public void utf16(java.lang.String);
+  public void utf8(java.lang.String);
+  public void varInt(long);
+  public void varUInt(long);
+class final class ch.so.agi.filegdb.write.DefinitionXmlWriter
+class class ch.so.agi.filegdb.write.DefinitionXmlWriter$1
+class public final class ch.so.agi.filegdb.write.FeatureClassDefinition
+  public boolean spatialIndex();
+  public ch.so.agi.filegdb.catalog.CrsDefinition crs();
+  public ch.so.agi.filegdb.geometry.GeometryFieldDefinition geometry();
+  public ch.so.agi.filegdb.write.FeatureClassDefinition(java.lang.String, java.lang.String, java.util.List<ch.so.agi.filegdb.table.FileGdbField>, ch.so.agi.filegdb.geometry.GeometryFieldDefinition, ch.so.agi.filegdb.catalog.CrsDefinition);
+  public ch.so.agi.filegdb.write.FeatureClassDefinition(java.lang.String, java.lang.String, java.util.List<ch.so.agi.filegdb.table.FileGdbField>, ch.so.agi.filegdb.geometry.GeometryFieldDefinition, ch.so.agi.filegdb.catalog.CrsDefinition, boolean);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String alias();
+  public java.lang.String name();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+  public static ch.so.agi.filegdb.write.FeatureClassDefinition$Builder builder(java.lang.String);
+class public final class ch.so.agi.filegdb.write.FeatureClassDefinition$Builder
+  public ch.so.agi.filegdb.write.FeatureClassDefinition build();
+  public ch.so.agi.filegdb.write.FeatureClassDefinition$Builder alias(java.lang.String);
+  public ch.so.agi.filegdb.write.FeatureClassDefinition$Builder crs(ch.so.agi.filegdb.catalog.CrsDefinition);
+  public ch.so.agi.filegdb.write.FeatureClassDefinition$Builder field(ch.so.agi.filegdb.table.FileGdbField);
+  public ch.so.agi.filegdb.write.FeatureClassDefinition$Builder geometry(ch.so.agi.filegdb.geometry.GeometryFieldDefinition);
+  public ch.so.agi.filegdb.write.FeatureClassDefinition$Builder spatialIndex(boolean);
+class public final class ch.so.agi.filegdb.write.GdbCreator implements java.lang.AutoCloseable
+  public ch.so.agi.filegdb.write.GdbFeatureWriter appendFeatures(java.lang.String, boolean) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbFeatureWriter createFeatureClass(ch.so.agi.filegdb.write.FeatureClassDefinition) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbTableWriter appendRows(java.lang.String) throws java.io.IOException;
+  public ch.so.agi.filegdb.write.GdbTableWriter createTable(ch.so.agi.filegdb.write.TableDefinition) throws java.io.IOException;
+  public static ch.so.agi.filegdb.write.GdbCreator create(java.nio.file.Path) throws java.io.IOException;
+  public static ch.so.agi.filegdb.write.GdbCreator openExisting(java.nio.file.Path, java.lang.Runnable) throws java.io.IOException;
+  public static void checkAppendSupport(ch.so.agi.filegdb.catalog.GdbCatalog, ch.so.agi.filegdb.catalog.Dataset, java.lang.Runnable) throws java.io.IOException;
+  public void close() throws java.io.IOException;
+  public void createDomain(ch.so.agi.filegdb.catalog.Domain) throws java.io.IOException;
+  public void createRelationship(ch.so.agi.filegdb.write.RelationshipDefinition) throws java.io.IOException;
+class class ch.so.agi.filegdb.write.GdbCreator$1
+class public final class ch.so.agi.filegdb.write.GdbFeatureWriter implements java.lang.AutoCloseable
+  public java.lang.String name();
+  public long featureCount();
+  public long write(java.lang.Object[]) throws java.io.IOException;
+  public long write(java.lang.Object[], ch.so.agi.filegdb.geometry.FileGdbGeometry) throws java.io.IOException;
+  public void close() throws java.io.IOException;
+class public final class ch.so.agi.filegdb.write.GdbTableWriter implements java.lang.AutoCloseable
+  public java.lang.String name();
+  public long rowCount();
+  public long write(java.lang.Object[]) throws java.io.IOException;
+  public void close() throws java.io.IOException;
+class public final class ch.so.agi.filegdb.write.RelationshipDefinition
+  public boolean composite();
+  public ch.so.agi.filegdb.catalog.RelationshipCardinality cardinality();
+  public ch.so.agi.filegdb.write.RelationshipDefinition(java.lang.String, java.lang.String, java.lang.String, ch.so.agi.filegdb.catalog.RelationshipCardinality, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, boolean);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String backwardLabel();
+  public java.lang.String destinationClassName();
+  public java.lang.String destinationForeignKey();
+  public java.lang.String destinationPrimaryKey();
+  public java.lang.String forwardLabel();
+  public java.lang.String name();
+  public java.lang.String originClassName();
+  public java.lang.String originForeignKey();
+  public java.lang.String originPrimaryKey();
+  public static ch.so.agi.filegdb.write.RelationshipDefinition$Builder builder(java.lang.String);
+class public final class ch.so.agi.filegdb.write.RelationshipDefinition$Builder
+  public ch.so.agi.filegdb.write.RelationshipDefinition build();
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder cardinality(ch.so.agi.filegdb.catalog.RelationshipCardinality);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder composite(boolean);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder destinationClass(java.lang.String);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder destinationForeignKey(java.lang.String);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder destinationPrimaryKey(java.lang.String);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder labels(java.lang.String, java.lang.String);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder originClass(java.lang.String);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder originForeignKey(java.lang.String);
+  public ch.so.agi.filegdb.write.RelationshipDefinition$Builder originPrimaryKey(java.lang.String);
+class public final class ch.so.agi.filegdb.write.TableDefinition
+  public ch.so.agi.filegdb.write.TableDefinition(java.lang.String, java.util.List<ch.so.agi.filegdb.table.FileGdbField>);
+  public final boolean equals(java.lang.Object);
+  public final int hashCode();
+  public final java.lang.String toString();
+  public java.lang.String name();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+  public static ch.so.agi.filegdb.write.TableDefinition$Builder builder(java.lang.String);
+class public final class ch.so.agi.filegdb.write.TableDefinition$Builder
+  public ch.so.agi.filegdb.write.TableDefinition build();
+  public ch.so.agi.filegdb.write.TableDefinition$Builder field(ch.so.agi.filegdb.table.FileGdbField);
+class public final class ch.so.agi.filegdb.write.TableFileWriter implements java.lang.AutoCloseable
+  public java.nio.file.Path path();
+  public java.util.List<ch.so.agi.filegdb.table.FileGdbField> fields();
+  public long rowCount();
+  public long totalRecordCount();
+  public long writeRow(java.lang.Object[], ch.so.agi.filegdb.geometry.FileGdbGeometry) throws java.io.IOException;
+  public static ch.so.agi.filegdb.write.TableFileWriter append(java.nio.file.Path, boolean, java.util.Map<java.lang.String, ch.so.agi.filegdb.table.FieldMetadata>) throws java.io.IOException;
+  public static ch.so.agi.filegdb.write.TableFileWriter append(java.nio.file.Path, boolean, java.util.Map<java.lang.String, ch.so.agi.filegdb.table.FieldMetadata>, java.lang.Runnable) throws java.io.IOException;
+  public static ch.so.agi.filegdb.write.TableFileWriter create(java.nio.file.Path, ch.so.agi.filegdb.geometry.GeometryKind, boolean, boolean) throws java.io.IOException;
+  public void addField(ch.so.agi.filegdb.table.FileGdbField);
+  public void addGeometryField(ch.so.agi.filegdb.table.FileGdbGeomField);
+  public void close() throws java.io.IOException;
+  public void setCancellation(java.lang.Runnable);
+  public void setSpatialIndex(boolean);
+  public void sync() throws java.io.IOException;
+  public void writeFieldDescriptors() throws java.io.IOException;
+class class ch.so.agi.filegdb.write.TableFileWriter$1
+class final class ch.so.agi.filegdb.write.Uuids

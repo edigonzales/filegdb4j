@@ -1,8 +1,21 @@
 package ch.so.agi.filegdb.geometry;
 
 /** Analytic XY circle geometry, using translated coordinates to avoid cancellation. */
-public record ArcGeometry(
-    double centerX, double centerY, double radius, double start, double sweep) {
+public final class ArcGeometry {
+  private final double centerX;
+  private final double centerY;
+  private final double radius;
+  private final double start;
+  private final double sweep;
+
+  public ArcGeometry(double centerX, double centerY, double radius, double start, double sweep) {
+    this.centerX = centerX;
+    this.centerY = centerY;
+    this.radius = radius;
+    this.start = start;
+    this.sweep = sweep;
+  }
+
   public static ArcGeometry of(FileGdbPoint a, FileGdbPoint b, CircularArcSegment arc) {
     double cx, cy;
     boolean closed = a.x() == b.x() && a.y() == b.y();
@@ -45,5 +58,67 @@ public record ArcGeometry(
 
   public boolean containsAngle(double angle) {
     return positive(sweep >= 0 ? angle - start : start - angle) <= Math.abs(sweep) + 1e-14;
+  }
+
+  public double centerX() {
+    return centerX;
+  }
+
+  public double centerY() {
+    return centerY;
+  }
+
+  public double radius() {
+    return radius;
+  }
+
+  public double start() {
+    return start;
+  }
+
+  public double sweep() {
+    return sweep;
+  }
+
+  @Override
+  public final boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    ArcGeometry other = (ArcGeometry) o;
+    return Double.compare(centerX, other.centerX) == 0
+        && Double.compare(centerY, other.centerY) == 0
+        && Double.compare(radius, other.radius) == 0
+        && Double.compare(start, other.start) == 0
+        && Double.compare(sweep, other.sweep) == 0;
+  }
+
+  @Override
+  public final int hashCode() {
+    int result = 0;
+    result = 31 * result + Double.hashCode(centerX);
+    result = 31 * result + Double.hashCode(centerY);
+    result = 31 * result + Double.hashCode(radius);
+    result = 31 * result + Double.hashCode(start);
+    result = 31 * result + Double.hashCode(sweep);
+    return result;
+  }
+
+  @Override
+  public final String toString() {
+    return "ArcGeometry[centerX="
+        + centerX
+        + ", centerY="
+        + centerY
+        + ", radius="
+        + radius
+        + ", start="
+        + start
+        + ", sweep="
+        + sweep
+        + "]";
   }
 }

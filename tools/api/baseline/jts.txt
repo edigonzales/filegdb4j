@@ -1,0 +1,9 @@
+class public final class ch.so.agi.filegdb.jts.JtsGeometryReader
+  public ch.so.agi.filegdb.jts.JtsGeometryReader(int);
+  public org.locationtech.jts.geom.Geometry read(ch.so.agi.filegdb.geometry.FileGdbGeometry);
+  public org.locationtech.jts.geom.GeometryFactory factory();
+class public final class ch.so.agi.filegdb.jts.JtsGeometryWriter
+  public ch.so.agi.filegdb.geometry.FileGdbGeometry write(org.locationtech.jts.geom.Geometry);
+  public ch.so.agi.filegdb.geometry.FileGdbPolygon polygon(org.locationtech.jts.geom.Polygon);
+  public ch.so.agi.filegdb.geometry.FileGdbPolyline lineString(org.locationtech.jts.geom.LineString);
+  public ch.so.agi.filegdb.jts.JtsGeometryWriter();

@@ -43,21 +43,22 @@ public final class JtsGeometryReader {
     if (geometry == null) {
       return null;
     }
-    if (geometry instanceof FileGdbPoint point) {
-      return factory.createPoint(coordinate(point));
+    if (geometry instanceof FileGdbPoint) {
+      return factory.createPoint(coordinate((FileGdbPoint) geometry));
     }
-    if (geometry instanceof FileGdbMultiPoint multiPoint) {
-      List<Point> points = new ArrayList<>(multiPoint.points().size());
-      for (FileGdbPoint point : multiPoint.points()) {
+    if (geometry instanceof FileGdbMultiPoint) {
+      List<FileGdbPoint> source = ((FileGdbMultiPoint) geometry).points();
+      List<Point> points = new ArrayList<>(source.size());
+      for (FileGdbPoint point : source) {
         points.add(factory.createPoint(coordinate(point)));
       }
-      return factory.createMultiPoint(points.toArray(Point[]::new));
+      return factory.createMultiPoint(points.toArray(new Point[points.size()]));
     }
-    if (geometry instanceof FileGdbPolyline polyline) {
-      return lineString(polyline);
+    if (geometry instanceof FileGdbPolyline) {
+      return lineString((FileGdbPolyline) geometry);
     }
-    if (geometry instanceof FileGdbPolygon polygon) {
-      return polygon(polygon);
+    if (geometry instanceof FileGdbPolygon) {
+      return polygon((FileGdbPolygon) geometry);
     }
     throw new IllegalArgumentException("Unsupported geometry: " + geometry.getClass().getName());
   }
@@ -76,7 +77,7 @@ public final class JtsGeometryReader {
     if (lines.size() == 1) {
       return lines.get(0);
     }
-    return factory.createMultiLineString(lines.toArray(LineString[]::new));
+    return factory.createMultiLineString(lines.toArray(new LineString[lines.size()]));
   }
 
   private Geometry polygon(FileGdbPolygon polygon) {
@@ -132,13 +133,13 @@ public final class JtsGeometryReader {
 
     List<Polygon> polygons = new ArrayList<>(exteriors.size());
     for (int i = 0; i < exteriors.size(); i++) {
-      polygons.add(
-          factory.createPolygon(exteriors.get(i), assignedHoles.get(i).toArray(LinearRing[]::new)));
+      List<LinearRing> ringHoles = assignedHoles.get(i);
+      polygons.add(factory.createPolygon(exteriors.get(i), ringHoles.toArray(new LinearRing[ringHoles.size()])));
     }
     if (polygons.size() == 1) {
       return polygons.get(0);
     }
-    return factory.createMultiPolygon(polygons.toArray(Polygon[]::new));
+    return factory.createMultiPolygon(polygons.toArray(new Polygon[polygons.size()]));
   }
 
   private Coordinate[] coordinates(FileGdbPart part) {

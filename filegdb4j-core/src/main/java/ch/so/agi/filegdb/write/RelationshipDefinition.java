@@ -1,6 +1,7 @@
 package ch.so.agi.filegdb.write;
 
 import ch.so.agi.filegdb.catalog.RelationshipCardinality;
+import java.util.Objects;
 
 /**
  * Definition of a relationship class to create.
@@ -15,21 +16,156 @@ import ch.so.agi.filegdb.catalog.RelationshipCardinality;
  *     .build();
  * }</pre>
  */
-public record RelationshipDefinition(
-    String name,
-    String originClassName,
-    String destinationClassName,
-    RelationshipCardinality cardinality,
-    String originPrimaryKey,
-    String originForeignKey,
-    String destinationPrimaryKey,
-    String destinationForeignKey,
-    String forwardLabel,
-    String backwardLabel,
-    boolean composite) {
+public final class RelationshipDefinition {
+  private final String name;
+  private final String originClassName;
+  private final String destinationClassName;
+  private final RelationshipCardinality cardinality;
+  private final String originPrimaryKey;
+  private final String originForeignKey;
+  private final String destinationPrimaryKey;
+  private final String destinationForeignKey;
+  private final String forwardLabel;
+  private final String backwardLabel;
+  private final boolean composite;
+
+  public RelationshipDefinition(
+      String name,
+      String originClassName,
+      String destinationClassName,
+      RelationshipCardinality cardinality,
+      String originPrimaryKey,
+      String originForeignKey,
+      String destinationPrimaryKey,
+      String destinationForeignKey,
+      String forwardLabel,
+      String backwardLabel,
+      boolean composite) {
+    this.name = name;
+    this.originClassName = originClassName;
+    this.destinationClassName = destinationClassName;
+    this.cardinality = cardinality;
+    this.originPrimaryKey = originPrimaryKey;
+    this.originForeignKey = originForeignKey;
+    this.destinationPrimaryKey = destinationPrimaryKey;
+    this.destinationForeignKey = destinationForeignKey;
+    this.forwardLabel = forwardLabel;
+    this.backwardLabel = backwardLabel;
+    this.composite = composite;
+  }
+
+  public String name() {
+    return name;
+  }
+
+  public String originClassName() {
+    return originClassName;
+  }
+
+  public String destinationClassName() {
+    return destinationClassName;
+  }
+
+  public RelationshipCardinality cardinality() {
+    return cardinality;
+  }
+
+  public String originPrimaryKey() {
+    return originPrimaryKey;
+  }
+
+  public String originForeignKey() {
+    return originForeignKey;
+  }
+
+  public String destinationPrimaryKey() {
+    return destinationPrimaryKey;
+  }
+
+  public String destinationForeignKey() {
+    return destinationForeignKey;
+  }
+
+  public String forwardLabel() {
+    return forwardLabel;
+  }
+
+  public String backwardLabel() {
+    return backwardLabel;
+  }
+
+  public boolean composite() {
+    return composite;
+  }
 
   public static Builder builder(String name) {
     return new Builder(name);
+  }
+
+  @Override
+  public final boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    RelationshipDefinition other = (RelationshipDefinition) o;
+    return composite == other.composite
+        && Objects.equals(name, other.name)
+        && Objects.equals(originClassName, other.originClassName)
+        && Objects.equals(destinationClassName, other.destinationClassName)
+        && Objects.equals(cardinality, other.cardinality)
+        && Objects.equals(originPrimaryKey, other.originPrimaryKey)
+        && Objects.equals(originForeignKey, other.originForeignKey)
+        && Objects.equals(destinationPrimaryKey, other.destinationPrimaryKey)
+        && Objects.equals(destinationForeignKey, other.destinationForeignKey)
+        && Objects.equals(forwardLabel, other.forwardLabel)
+        && Objects.equals(backwardLabel, other.backwardLabel);
+  }
+
+  @Override
+  public final int hashCode() {
+    int result = 0;
+    result = 31 * result + Objects.hashCode(name);
+    result = 31 * result + Objects.hashCode(originClassName);
+    result = 31 * result + Objects.hashCode(destinationClassName);
+    result = 31 * result + Objects.hashCode(cardinality);
+    result = 31 * result + Objects.hashCode(originPrimaryKey);
+    result = 31 * result + Objects.hashCode(originForeignKey);
+    result = 31 * result + Objects.hashCode(destinationPrimaryKey);
+    result = 31 * result + Objects.hashCode(destinationForeignKey);
+    result = 31 * result + Objects.hashCode(forwardLabel);
+    result = 31 * result + Objects.hashCode(backwardLabel);
+    result = 31 * result + Boolean.hashCode(composite);
+    return result;
+  }
+
+  @Override
+  public final String toString() {
+    return "RelationshipDefinition[name="
+        + name
+        + ", originClassName="
+        + originClassName
+        + ", destinationClassName="
+        + destinationClassName
+        + ", cardinality="
+        + cardinality
+        + ", originPrimaryKey="
+        + originPrimaryKey
+        + ", originForeignKey="
+        + originForeignKey
+        + ", destinationPrimaryKey="
+        + destinationPrimaryKey
+        + ", destinationForeignKey="
+        + destinationForeignKey
+        + ", forwardLabel="
+        + forwardLabel
+        + ", backwardLabel="
+        + backwardLabel
+        + ", composite="
+        + composite
+        + "]";
   }
 
   /** Fluent builder. */
@@ -102,13 +238,13 @@ public record RelationshipDefinition(
     }
 
     public RelationshipDefinition build() {
-      if (name == null || name.isBlank()) {
+      if (name == null || name.trim().isEmpty()) {
         throw new IllegalArgumentException("Relationship name is required");
       }
       if (originClassName == null || destinationClassName == null) {
         throw new IllegalArgumentException("Origin and destination class are required");
       }
-      if (originPrimaryKey == null || originPrimaryKey.isBlank()) {
+      if (originPrimaryKey == null || originPrimaryKey.trim().isEmpty()) {
         throw new IllegalArgumentException("Origin primary key is required");
       }
       if (cardinality == RelationshipCardinality.MANY_TO_MANY) {
@@ -119,7 +255,7 @@ public record RelationshipDefinition(
               "Many-to-many relationships need origin foreign key, destination primary and"
                   + " destination foreign key");
         }
-      } else if (originForeignKey == null || originForeignKey.isBlank()) {
+      } else if (originForeignKey == null || originForeignKey.trim().isEmpty()) {
         throw new IllegalArgumentException("Origin foreign key is required");
       }
       return new RelationshipDefinition(

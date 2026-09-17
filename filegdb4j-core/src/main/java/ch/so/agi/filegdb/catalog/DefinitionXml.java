@@ -4,6 +4,8 @@ import ch.so.agi.filegdb.table.FieldMetadata;
 import ch.so.agi.filegdb.table.FileGdbFieldType;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +45,7 @@ public final class DefinitionXml {
     String latestWkid = childText(spatialReference, "LatestWKID");
     return new CrsDefinition(
         parseInt(wkid),
-        latestWkid == null || latestWkid.isBlank() ? null : parseInt(latestWkid),
+        latestWkid == null || latestWkid.trim().isEmpty() ? null : parseInt(latestWkid),
         wkt == null ? "" : wkt);
   }
 
@@ -54,23 +56,24 @@ public final class DefinitionXml {
   public static Map<String, FieldMetadata> fieldInfo(String xml) {
     Element root = parse(xml);
     if (root == null) {
-      return Map.of();
+      return Collections.emptyMap();
     }
     Element infos = find(root, "GPFieldInfoExs");
     if (infos == null) {
-      return Map.of();
+      return Collections.emptyMap();
     }
     Map<String, FieldMetadata> result = new LinkedHashMap<>();
     for (Element info : children(infos, "GPFieldInfoEx")) {
       String name = childText(info, "Name");
-      if (name == null || name.isBlank()) {
+      if (name == null || name.trim().isEmpty()) {
         continue;
       }
       String domain = childText(info, "DomainName");
       boolean highPrecision = "true".equalsIgnoreCase(trimmed(childText(info, "HighPrecision")));
       result.put(
           name,
-          new FieldMetadata(domain == null || domain.isBlank() ? null : domain, highPrecision));
+          new FieldMetadata(
+              domain == null || domain.trim().isEmpty() ? null : domain, highPrecision));
     }
     return result;
   }
@@ -79,17 +82,17 @@ public final class DefinitionXml {
   public static String unsupportedEditingReason(String xml) {
     Element root = parse(xml);
     if (root == null) return "Missing dataset definition";
-    for (String name : List.of("SubtypeFieldName", "AreaFieldName", "LengthFieldName")) {
+    for (String name : Arrays.asList("SubtypeFieldName", "AreaFieldName", "LengthFieldName")) {
       Element element = find(root, name);
-      if (element != null && !element.getTextContent().isBlank()) return name;
+      if (element != null && !element.getTextContent().trim().isEmpty()) return name;
     }
-    for (String name : List.of("Subtypes", "AttributeRules", "ControllerMemberships")) {
+    for (String name : Arrays.asList("Subtypes", "AttributeRules", "ControllerMemberships")) {
       Element element = find(root, name);
       if (element != null)
         for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling())
           if (child instanceof Element) return name;
     }
-    for (String name : List.of("HasAttachments", "EditorTrackingEnabled")) {
+    for (String name : Arrays.asList("HasAttachments", "EditorTrackingEnabled")) {
       Element element = find(root, name);
       if (element != null && "true".equalsIgnoreCase(element.getTextContent().trim())) return name;
     }
@@ -122,8 +125,9 @@ public final class DefinitionXml {
       }
     }
     try {
-      var transformer = javax.xml.transform.TransformerFactory.newInstance().newTransformer();
-      var output = new java.io.StringWriter();
+      javax.xml.transform.Transformer transformer =
+          javax.xml.transform.TransformerFactory.newInstance().newTransformer();
+      java.io.StringWriter output = new java.io.StringWriter();
       transformer.transform(
           new javax.xml.transform.dom.DOMSource(root.getOwnerDocument()),
           new javax.xml.transform.stream.StreamResult(output));
@@ -191,26 +195,44 @@ public final class DefinitionXml {
     if (esriType == null) {
       return FileGdbFieldType.UNDEFINED;
     }
-    return switch (esriType) {
-      case "esriFieldTypeSmallInteger" -> FileGdbFieldType.INT16;
-      case "esriFieldTypeInteger" -> FileGdbFieldType.INT32;
-      case "esriFieldTypeBigInteger" -> FileGdbFieldType.INT64;
-      case "esriFieldTypeSingle" -> FileGdbFieldType.FLOAT32;
-      case "esriFieldTypeDouble" -> FileGdbFieldType.FLOAT64;
-      case "esriFieldTypeString" -> FileGdbFieldType.STRING;
-      case "esriFieldTypeDate" -> FileGdbFieldType.DATETIME;
-      case "esriFieldTypeDateOnly" -> FileGdbFieldType.DATE;
-      case "esriFieldTypeTimeOnly" -> FileGdbFieldType.TIME;
-      case "esriFieldTypeTimestampOffset" -> FileGdbFieldType.DATETIME_WITH_OFFSET;
-      case "esriFieldTypeOID" -> FileGdbFieldType.OBJECTID;
-      case "esriFieldTypeGeometry" -> FileGdbFieldType.GEOMETRY;
-      case "esriFieldTypeBlob" -> FileGdbFieldType.BINARY;
-      case "esriFieldTypeRaster" -> FileGdbFieldType.RASTER;
-      case "esriFieldTypeGUID" -> FileGdbFieldType.GUID;
-      case "esriFieldTypeGlobalID" -> FileGdbFieldType.GLOBALID;
-      case "esriFieldTypeXML" -> FileGdbFieldType.XML;
-      default -> FileGdbFieldType.UNDEFINED;
-    };
+    switch (esriType) {
+      case "esriFieldTypeSmallInteger":
+        return FileGdbFieldType.INT16;
+      case "esriFieldTypeInteger":
+        return FileGdbFieldType.INT32;
+      case "esriFieldTypeBigInteger":
+        return FileGdbFieldType.INT64;
+      case "esriFieldTypeSingle":
+        return FileGdbFieldType.FLOAT32;
+      case "esriFieldTypeDouble":
+        return FileGdbFieldType.FLOAT64;
+      case "esriFieldTypeString":
+        return FileGdbFieldType.STRING;
+      case "esriFieldTypeDate":
+        return FileGdbFieldType.DATETIME;
+      case "esriFieldTypeDateOnly":
+        return FileGdbFieldType.DATE;
+      case "esriFieldTypeTimeOnly":
+        return FileGdbFieldType.TIME;
+      case "esriFieldTypeTimestampOffset":
+        return FileGdbFieldType.DATETIME_WITH_OFFSET;
+      case "esriFieldTypeOID":
+        return FileGdbFieldType.OBJECTID;
+      case "esriFieldTypeGeometry":
+        return FileGdbFieldType.GEOMETRY;
+      case "esriFieldTypeBlob":
+        return FileGdbFieldType.BINARY;
+      case "esriFieldTypeRaster":
+        return FileGdbFieldType.RASTER;
+      case "esriFieldTypeGUID":
+        return FileGdbFieldType.GUID;
+      case "esriFieldTypeGlobalID":
+        return FileGdbFieldType.GLOBALID;
+      case "esriFieldTypeXML":
+        return FileGdbFieldType.XML;
+      default:
+        return FileGdbFieldType.UNDEFINED;
+    }
   }
 
   private static CodedValueDomain codedValueDomain(Element domain) {
@@ -252,7 +274,7 @@ public final class DefinitionXml {
   private static List<RelationshipKey> keys(Element relationship, String containerName) {
     Element container = find(relationship, containerName);
     if (container == null) {
-      return List.of();
+      return Collections.emptyList();
     }
     List<RelationshipKey> keys = new ArrayList<>();
     for (Element key : children(container, "RelationshipClassKey")) {
@@ -280,7 +302,7 @@ public final class DefinitionXml {
   }
 
   static Element parse(String xml) {
-    if (xml == null || xml.isBlank()) {
+    if (xml == null || xml.trim().isEmpty()) {
       return null;
     }
     try {
@@ -314,7 +336,8 @@ public final class DefinitionXml {
       return element;
     }
     for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
-      if (child instanceof Element childElement) {
+      if (child instanceof Element) {
+        Element childElement = (Element) child;
         Element result = find(childElement, localName);
         if (result != null) {
           return result;
@@ -333,7 +356,8 @@ public final class DefinitionXml {
       return element;
     }
     for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
-      if (child instanceof Element childElement) {
+      if (child instanceof Element) {
+        Element childElement = (Element) child;
         Element result = findContaining(childElement, fragment);
         if (result != null) {
           return result;
@@ -349,9 +373,11 @@ public final class DefinitionXml {
       return result;
     }
     for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
-      if (child instanceof Element childElement
-          && localName(childElement.getTagName()).equals(localName)) {
-        result.add(childElement);
+      if (child instanceof Element) {
+        Element childElement = (Element) child;
+        if (localName(childElement.getTagName()).equals(localName)) {
+          result.add(childElement);
+        }
       }
     }
     return result;
@@ -359,16 +385,18 @@ public final class DefinitionXml {
 
   static String childText(Element element, String localName) {
     for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
-      if (child instanceof Element childElement
-          && localName(childElement.getTagName()).equals(localName)) {
-        return childElement.getTextContent();
+      if (child instanceof Element) {
+        Element childElement = (Element) child;
+        if (localName(childElement.getTagName()).equals(localName)) {
+          return childElement.getTextContent();
+        }
       }
     }
     return null;
   }
 
   private static int parseInt(String value) {
-    if (value == null || value.isBlank()) {
+    if (value == null || value.trim().isEmpty()) {
       return 0;
     }
     try {

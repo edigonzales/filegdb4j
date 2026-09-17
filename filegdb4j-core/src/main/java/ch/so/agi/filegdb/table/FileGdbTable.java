@@ -7,10 +7,13 @@ import ch.so.agi.filegdb.catalog.GdbCatalog;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -25,7 +28,7 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
   private final GdbCatalog catalog;
 
   public FileGdbTable(Dataset dataset) throws IOException {
-    this(dataset, Map.of(), null);
+    this(dataset, Collections.<String, FieldMetadata>emptyMap(), null);
   }
 
   public FileGdbTable(Dataset dataset, Map<String, FieldMetadata> metadata, GdbCatalog catalog)
@@ -126,14 +129,66 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
     return new FileGdbRow(objectId, tableFile.fields(), values);
   }
 
-  public record QueryResult(List<FileGdbRow> rows, boolean indexUsed, long geometriesRead)
-      implements Iterable<FileGdbRow> {
-    public QueryResult {
-      rows = List.copyOf(rows);
+  public static final class QueryResult implements Iterable<FileGdbRow> {
+    private final List<FileGdbRow> rows;
+    private final boolean indexUsed;
+    private final long geometriesRead;
+
+    public QueryResult(List<FileGdbRow> rows, boolean indexUsed, long geometriesRead) {
+      this.rows = Collections.unmodifiableList(new ArrayList<>(rows));
+      this.indexUsed = indexUsed;
+      this.geometriesRead = geometriesRead;
     }
 
+    public List<FileGdbRow> rows() {
+      return rows;
+    }
+
+    public boolean indexUsed() {
+      return indexUsed;
+    }
+
+    public long geometriesRead() {
+      return geometriesRead;
+    }
+
+    @Override
     public Iterator<FileGdbRow> iterator() {
       return rows.iterator();
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      QueryResult other = (QueryResult) o;
+      return indexUsed == other.indexUsed
+          && geometriesRead == other.geometriesRead
+          && Objects.equals(rows, other.rows);
+    }
+
+    @Override
+    public final int hashCode() {
+      int result = 0;
+      result = 31 * result + Objects.hashCode(rows);
+      result = 31 * result + Boolean.hashCode(indexUsed);
+      result = 31 * result + Long.hashCode(geometriesRead);
+      return result;
+    }
+
+    @Override
+    public final String toString() {
+      return "QueryResult[rows="
+          + rows
+          + ", indexUsed="
+          + indexUsed
+          + ", geometriesRead="
+          + geometriesRead
+          + "]";
     }
   }
 
@@ -156,10 +211,11 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
         || filter.yMin() > filter.yMax())
       throw new IllegalArgumentException("Invalid query envelope");
     if (geomField() == null) throw new IllegalStateException("Table has no geometry");
-    var index = ch.so.agi.filegdb.index.SpatialIndex.path(path());
+    java.nio.file.Path index = ch.so.agi.filegdb.index.SpatialIndex.path(path());
     boolean indexed = false;
     if (useIndex && java.nio.file.Files.exists(index)) {
-      try (var file = new java.io.RandomAccessFile(path().toFile(), "r")) {
+      try (java.io.RandomAccessFile file =
+          new java.io.RandomAccessFile(path().toFile(), "r")) {
         file.seek(40);
         int size = Integer.reverseBytes(file.readInt());
         if (size > 0 && size < 128) {
@@ -181,7 +237,7 @@ public final class FileGdbTable implements AutoCloseable, Iterable<FileGdbRow> {
       candidates =
           ch.so.agi.filegdb.index.SpatialIndex.candidates(
               index, geomField().geometry().spatialIndexGridResolution(), filter);
-    var rows = new java.util.ArrayList<FileGdbRow>();
+    java.util.ArrayList<FileGdbRow> rows = new java.util.ArrayList<>();
     long read = 0;
     if (candidates != null) {
       for (long id : candidates) {

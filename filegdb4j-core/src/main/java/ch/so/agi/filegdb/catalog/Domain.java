@@ -1,6 +1,7 @@
 package ch.so.agi.filegdb.catalog;
 
 import ch.so.agi.filegdb.table.FileGdbFieldType;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -9,7 +10,7 @@ import java.util.List;
  * @see CodedValueDomain
  * @see RangeDomain
  */
-public sealed interface Domain permits CodedValueDomain, RangeDomain {
+public interface Domain {
 
   String name();
 
@@ -23,6 +24,6 @@ public sealed interface Domain permits CodedValueDomain, RangeDomain {
 
   /** Coded values of a {@link CodedValueDomain}, empty for range domains. */
   default List<CodedValue> values() {
-    return List.of();
+    return Collections.emptyList();
   }
 }

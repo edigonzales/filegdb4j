@@ -4,7 +4,9 @@ import ch.so.agi.filegdb.catalog.CrsDefinition;
 import ch.so.agi.filegdb.geometry.GeometryFieldDefinition;
 import ch.so.agi.filegdb.table.FileGdbField;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Definition of a feature class to create.
@@ -20,13 +22,13 @@ import java.util.List;
  * <p>The object id field is created automatically; the attribute list must not contain geometry or
  * object id fields.
  */
-public record FeatureClassDefinition(
-    String name,
-    String alias,
-    List<FileGdbField> fields,
-    GeometryFieldDefinition geometry,
-    CrsDefinition crs,
-    boolean spatialIndex) {
+public final class FeatureClassDefinition {
+  private final String name;
+  private final String alias;
+  private final List<FileGdbField> fields;
+  private final GeometryFieldDefinition geometry;
+  private final CrsDefinition crs;
+  private final boolean spatialIndex;
 
   public FeatureClassDefinition(
       String name,
@@ -37,18 +39,96 @@ public record FeatureClassDefinition(
     this(name, alias, fields, geometry, crs, true);
   }
 
-  public FeatureClassDefinition {
-    if (name == null || name.isBlank()) {
+  public FeatureClassDefinition(
+      String name,
+      String alias,
+      List<FileGdbField> fields,
+      GeometryFieldDefinition geometry,
+      CrsDefinition crs,
+      boolean spatialIndex) {
+    if (name == null || name.trim().isEmpty()) {
       throw new IllegalArgumentException("Feature class name is required");
     }
-    fields = List.copyOf(fields);
-    if (crs == null) {
-      crs = CrsDefinition.UNKNOWN;
-    }
+    this.name = name;
+    this.alias = alias;
+    this.fields = Collections.unmodifiableList(new ArrayList<>(fields));
+    this.geometry = geometry;
+    this.crs = crs == null ? CrsDefinition.UNKNOWN : crs;
+    this.spatialIndex = spatialIndex;
+  }
+
+  public String name() {
+    return name;
+  }
+
+  public String alias() {
+    return alias;
+  }
+
+  public List<FileGdbField> fields() {
+    return fields;
+  }
+
+  public GeometryFieldDefinition geometry() {
+    return geometry;
+  }
+
+  public CrsDefinition crs() {
+    return crs;
+  }
+
+  public boolean spatialIndex() {
+    return spatialIndex;
   }
 
   public static Builder builder(String name) {
     return new Builder(name);
+  }
+
+  @Override
+  public final boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    FeatureClassDefinition other = (FeatureClassDefinition) o;
+    return spatialIndex == other.spatialIndex
+        && Objects.equals(name, other.name)
+        && Objects.equals(alias, other.alias)
+        && Objects.equals(fields, other.fields)
+        && Objects.equals(geometry, other.geometry)
+        && Objects.equals(crs, other.crs);
+  }
+
+  @Override
+  public final int hashCode() {
+    int result = 0;
+    result = 31 * result + Objects.hashCode(name);
+    result = 31 * result + Objects.hashCode(alias);
+    result = 31 * result + Objects.hashCode(fields);
+    result = 31 * result + Objects.hashCode(geometry);
+    result = 31 * result + Objects.hashCode(crs);
+    result = 31 * result + Boolean.hashCode(spatialIndex);
+    return result;
+  }
+
+  @Override
+  public final String toString() {
+    return "FeatureClassDefinition[name="
+        + name
+        + ", alias="
+        + alias
+        + ", fields="
+        + fields
+        + ", geometry="
+        + geometry
+        + ", crs="
+        + crs
+        + ", spatialIndex="
+        + spatialIndex
+        + "]";
   }
 
   /** Fluent builder. */

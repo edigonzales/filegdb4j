@@ -21,8 +21,10 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -68,13 +70,99 @@ public final class FileGdbTableFile implements AutoCloseable {
   private long extentOffset = -1, gridOffset = -1;
 
   /** Physical layout needed to append without rewriting existing field definitions. */
-  public record WriteLayout(
-      int version,
-      long descriptorOffset,
-      int offsetWidth,
-      byte[] blockMap,
-      long extentOffset,
-      long gridOffset) {}
+  public static final class WriteLayout {
+    private final int version;
+    private final long descriptorOffset;
+    private final int offsetWidth;
+    private final byte[] blockMap;
+    private final long extentOffset;
+    private final long gridOffset;
+
+    public WriteLayout(
+        int version,
+        long descriptorOffset,
+        int offsetWidth,
+        byte[] blockMap,
+        long extentOffset,
+        long gridOffset) {
+      this.version = version;
+      this.descriptorOffset = descriptorOffset;
+      this.offsetWidth = offsetWidth;
+      this.blockMap = blockMap;
+      this.extentOffset = extentOffset;
+      this.gridOffset = gridOffset;
+    }
+
+    public int version() {
+      return version;
+    }
+
+    public long descriptorOffset() {
+      return descriptorOffset;
+    }
+
+    public int offsetWidth() {
+      return offsetWidth;
+    }
+
+    public byte[] blockMap() {
+      return blockMap;
+    }
+
+    public long extentOffset() {
+      return extentOffset;
+    }
+
+    public long gridOffset() {
+      return gridOffset;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      WriteLayout other = (WriteLayout) o;
+      return version == other.version
+          && descriptorOffset == other.descriptorOffset
+          && offsetWidth == other.offsetWidth
+          && Objects.equals(blockMap, other.blockMap)
+          && extentOffset == other.extentOffset
+          && gridOffset == other.gridOffset;
+    }
+
+    @Override
+    public final int hashCode() {
+      int result = 0;
+      result = 31 * result + Integer.hashCode(version);
+      result = 31 * result + Long.hashCode(descriptorOffset);
+      result = 31 * result + Integer.hashCode(offsetWidth);
+      result = 31 * result + Objects.hashCode(blockMap);
+      result = 31 * result + Long.hashCode(extentOffset);
+      result = 31 * result + Long.hashCode(gridOffset);
+      return result;
+    }
+
+    @Override
+    public final String toString() {
+      return "WriteLayout[version="
+          + version
+          + ", descriptorOffset="
+          + descriptorOffset
+          + ", offsetWidth="
+          + offsetWidth
+          + ", blockMap="
+          + blockMap
+          + ", extentOffset="
+          + extentOffset
+          + ", gridOffset="
+          + gridOffset
+          + "]";
+    }
+  }
 
   public WriteLayout writeLayout() {
     return new WriteLayout(
@@ -169,7 +257,7 @@ public final class FileGdbTableFile implements AutoCloseable {
   }
 
   public static FileGdbTableFile open(Path path) throws IOException {
-    return open(path, Map.of());
+    return open(path, Collections.<String, FieldMetadata>emptyMap());
   }
 
   /**
@@ -438,20 +526,24 @@ public final class FileGdbTableFile implements AutoCloseable {
         int maxWidth = 0;
         int defaultValueLength = 0;
         switch (type) {
-          case STRING -> {
+          case STRING:
             maxWidth = cursor.i32();
             flags = cursor.u8();
             defaultValueLength = (int) cursor.varUInt32();
-          }
-          case OBJECTID, BINARY, GUID, GLOBALID, XML -> {
+            break;
+          case OBJECTID:
+          case BINARY:
+          case GUID:
+          case GLOBALID:
+          case XML:
             cursor.u8();
             flags = cursor.u8();
-          }
-          default -> {
+            break;
+          default:
             cursor.u8();
             flags = cursor.u8();
             defaultValueLength = cursor.u8();
-          }
+            break;
         }
         byte[] defaultBytes =
             (flags & FLAG_EDITABLE) != 0 && defaultValueLength > 0
@@ -614,7 +706,7 @@ public final class FileGdbTableFile implements AutoCloseable {
       }
     }
     return new FieldParseResult(
-        List.copyOf(parsedFields),
+        Collections.unmodifiableList(new ArrayList<>(parsedFields)),
         parsedGeomField,
         parsedObjectIdIndex,
         parsedGeomIndex,
@@ -822,13 +914,154 @@ public final class FileGdbTableFile implements AutoCloseable {
     return (bytes[offset] & 0xFF) | ((bytes[offset + 1] & 0xFF) << 8);
   }
 
-  private record TableXHeader(
-      long totalRecordCount, int offsetSize, byte[] blockMap, boolean reliable) {}
+  private static final class TableXHeader {
+    private final long totalRecordCount;
+    private final int offsetSize;
+    private final byte[] blockMap;
+    private final boolean reliable;
 
-  private record FieldParseResult(
-      List<FileGdbField> fields,
-      FileGdbGeomField geomField,
-      int objectIdFieldIndex,
-      int geomFieldIndex,
-      int nullableFieldCount) {}
+    private TableXHeader(long totalRecordCount, int offsetSize, byte[] blockMap, boolean reliable) {
+      this.totalRecordCount = totalRecordCount;
+      this.offsetSize = offsetSize;
+      this.blockMap = blockMap;
+      this.reliable = reliable;
+    }
+
+    public long totalRecordCount() {
+      return totalRecordCount;
+    }
+
+    public int offsetSize() {
+      return offsetSize;
+    }
+
+    public byte[] blockMap() {
+      return blockMap;
+    }
+
+    public boolean reliable() {
+      return reliable;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      TableXHeader other = (TableXHeader) o;
+      return totalRecordCount == other.totalRecordCount
+          && offsetSize == other.offsetSize
+          && Objects.equals(blockMap, other.blockMap)
+          && reliable == other.reliable;
+    }
+
+    @Override
+    public final int hashCode() {
+      int result = 0;
+      result = 31 * result + Long.hashCode(totalRecordCount);
+      result = 31 * result + Integer.hashCode(offsetSize);
+      result = 31 * result + Objects.hashCode(blockMap);
+      result = 31 * result + Boolean.hashCode(reliable);
+      return result;
+    }
+
+    @Override
+    public final String toString() {
+      return "TableXHeader[totalRecordCount="
+          + totalRecordCount
+          + ", offsetSize="
+          + offsetSize
+          + ", blockMap="
+          + blockMap
+          + ", reliable="
+          + reliable
+          + "]";
+    }
+  }
+
+  private static final class FieldParseResult {
+    private final List<FileGdbField> fields;
+    private final FileGdbGeomField geomField;
+    private final int objectIdFieldIndex;
+    private final int geomFieldIndex;
+    private final int nullableFieldCount;
+
+    private FieldParseResult(
+        List<FileGdbField> fields,
+        FileGdbGeomField geomField,
+        int objectIdFieldIndex,
+        int geomFieldIndex,
+        int nullableFieldCount) {
+      this.fields = fields;
+      this.geomField = geomField;
+      this.objectIdFieldIndex = objectIdFieldIndex;
+      this.geomFieldIndex = geomFieldIndex;
+      this.nullableFieldCount = nullableFieldCount;
+    }
+
+    public List<FileGdbField> fields() {
+      return fields;
+    }
+
+    public FileGdbGeomField geomField() {
+      return geomField;
+    }
+
+    public int objectIdFieldIndex() {
+      return objectIdFieldIndex;
+    }
+
+    public int geomFieldIndex() {
+      return geomFieldIndex;
+    }
+
+    public int nullableFieldCount() {
+      return nullableFieldCount;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      FieldParseResult other = (FieldParseResult) o;
+      return objectIdFieldIndex == other.objectIdFieldIndex
+          && geomFieldIndex == other.geomFieldIndex
+          && nullableFieldCount == other.nullableFieldCount
+          && Objects.equals(fields, other.fields)
+          && Objects.equals(geomField, other.geomField);
+    }
+
+    @Override
+    public final int hashCode() {
+      int result = 0;
+      result = 31 * result + Objects.hashCode(fields);
+      result = 31 * result + Objects.hashCode(geomField);
+      result = 31 * result + Integer.hashCode(objectIdFieldIndex);
+      result = 31 * result + Integer.hashCode(geomFieldIndex);
+      result = 31 * result + Integer.hashCode(nullableFieldCount);
+      return result;
+    }
+
+    @Override
+    public final String toString() {
+      return "FieldParseResult[fields="
+          + fields
+          + ", geomField="
+          + geomField
+          + ", objectIdFieldIndex="
+          + objectIdFieldIndex
+          + ", geomFieldIndex="
+          + geomFieldIndex
+          + ", nullableFieldCount="
+          + nullableFieldCount
+          + "]";
+    }
+  }
 }

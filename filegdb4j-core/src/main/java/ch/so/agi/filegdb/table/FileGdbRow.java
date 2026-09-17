@@ -2,6 +2,7 @@ package ch.so.agi.filegdb.table;
 
 import ch.so.agi.filegdb.geometry.FileGdbGeometry;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * One decoded table row.
@@ -9,7 +10,28 @@ import java.util.List;
  * <p>{@code values} is aligned with {@code fields}; geometry values are
  * {@link FileGdbGeometry} instances.
  */
-public record FileGdbRow(long objectId, List<FileGdbField> fields, Object[] values) {
+public final class FileGdbRow {
+  private final long objectId;
+  private final List<FileGdbField> fields;
+  private final Object[] values;
+
+  public FileGdbRow(long objectId, List<FileGdbField> fields, Object[] values) {
+    this.objectId = objectId;
+    this.fields = fields;
+    this.values = values;
+  }
+
+  public long objectId() {
+    return objectId;
+  }
+
+  public List<FileGdbField> fields() {
+    return fields;
+  }
+
+  public Object[] values() {
+    return values;
+  }
 
   public Object get(int index) {
     return values[index];
@@ -36,5 +58,33 @@ public record FileGdbRow(long objectId, List<FileGdbField> fields, Object[] valu
       }
     }
     return null;
+  }
+
+  @Override
+  public final boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    FileGdbRow other = (FileGdbRow) o;
+    return objectId == other.objectId
+        && Objects.equals(fields, other.fields)
+        && Objects.equals(values, other.values);
+  }
+
+  @Override
+  public final int hashCode() {
+    int result = 0;
+    result = 31 * result + Long.hashCode(objectId);
+    result = 31 * result + Objects.hashCode(fields);
+    result = 31 * result + Objects.hashCode(values);
+    return result;
+  }
+
+  @Override
+  public final String toString() {
+    return "FileGdbRow[objectId=" + objectId + ", fields=" + fields + ", values=" + values + "]";
   }
 }

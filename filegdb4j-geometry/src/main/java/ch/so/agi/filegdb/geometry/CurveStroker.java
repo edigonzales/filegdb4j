@@ -1,6 +1,7 @@
 package ch.so.agi.filegdb.geometry;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -57,14 +58,14 @@ public final class CurveStroker {
 
   private List<FileGdbPoint> intermediate(
       FileGdbPoint start, FileGdbPoint end, FileGdbSegment segment) {
-    if (segment instanceof CircularArcSegment arc) {
-      return arc(start, end, arc);
+    if (segment instanceof CircularArcSegment) {
+      return arc(start, end, (CircularArcSegment) segment);
     }
-    if (segment instanceof BezierSegment bezier) {
-      return bezier(start, end, bezier);
+    if (segment instanceof BezierSegment) {
+      return bezier(start, end, (BezierSegment) segment);
     }
-    if (segment instanceof EllipseSegment ellipse) {
-      return ellipse(start, end, ellipse);
+    if (segment instanceof EllipseSegment) {
+      return ellipse(start, end, (EllipseSegment) segment);
     }
     throw new IllegalArgumentException("Unsupported segment: " + segment);
   }
@@ -103,7 +104,7 @@ public final class CurveStroker {
     } else {
       center = circumcenter(start, arc.interiorX(), arc.interiorY(), end);
       if (center == null) {
-        return List.of();
+        return Collections.emptyList();
       }
       startAngle = angle(center, start);
       interiorAngle = angle(center, arc.interiorX(), arc.interiorY());
@@ -157,7 +158,7 @@ public final class CurveStroker {
     double semiMajor = ellipse.semiMajor();
     double semiMinor = semiMajor * ellipse.minorMajorRatio();
     if (semiMajor <= 0 || semiMinor <= 0) {
-      return List.of();
+      return Collections.emptyList();
     }
     double rotation = Math.toRadians(ellipse.rotationDegrees());
     double startAngle = ellipseAngle(start, ellipse, rotation, semiMajor, semiMinor);

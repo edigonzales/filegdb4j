@@ -7,5 +7,4 @@ package ch.so.agi.filegdb.geometry;
  * segments (arc, Bezier, ellipse) are part of the format and will be added to
  * {@link FileGdbPart} as explicit segments.
  */
-public sealed interface FileGdbGeometry
-    permits FileGdbPoint, FileGdbMultiPoint, FileGdbPolyline, FileGdbPolygon {}
+public interface FileGdbGeometry {}

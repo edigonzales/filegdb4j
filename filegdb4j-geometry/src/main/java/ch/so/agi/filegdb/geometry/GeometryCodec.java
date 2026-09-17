@@ -1,7 +1,10 @@
 package ch.so.agi.filegdb.geometry;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Decodes Esri shape buffers as stored in file geodatabase geometry fields.
@@ -167,7 +170,7 @@ public final class GeometryCodec {
       Cursor cursor, GeometryFieldDefinition definition, boolean hasZ, boolean hasM) {
     long pointCount = cursor.varUInt32();
     if (pointCount == 0) {
-      return new FileGdbMultiPoint(List.of());
+      return new FileGdbMultiPoint(Collections.<FileGdbPoint>emptyList());
     }
     cursor.skipVarUInt(4);
 
@@ -211,7 +214,7 @@ public final class GeometryCodec {
       boolean isMultiPatch) {
     long pointCount = cursor.varUInt32();
     if (pointCount == 0) {
-      return List.of();
+      return Collections.emptyList();
     }
     if (isMultiPatch) {
       cursor.skipVarUInt(1);
@@ -219,7 +222,7 @@ public final class GeometryCodec {
     long partCount = cursor.varUInt32();
     long curveCount = hasCurveDescription ? cursor.varUInt32() : 0;
     if (partCount == 0) {
-      return List.of();
+      return Collections.emptyList();
     }
     cursor.skipVarUInt(4);
 
@@ -304,47 +307,53 @@ public final class GeometryCodec {
       int curveType = cursor.u8();
       FileGdbSegment segment;
       switch (curveType) {
-        case 1 -> {
-          double value1 = cursor.f64();
-          double value2 = cursor.f64();
-          long bits = cursor.u32();
-          boolean interiorPoint = (bits & 0x80) != 0 && (bits & 0x20) == 0;
-          boolean centerPoint = (bits & 0x1) == 0 && (bits & 0x20) == 0 && (bits & 0x40) == 0;
-          if (interiorPoint) {
-            segment = new CircularArcSegment(startIndex, value1, value2, false, false);
-          } else if (centerPoint) {
-            segment = new CircularArcSegment(startIndex, value1, value2, true, (bits & 0x8) != 0);
-          } else {
-            segment = null;
+        case 1:
+          {
+            double value1 = cursor.f64();
+            double value2 = cursor.f64();
+            long bits = cursor.u32();
+            boolean interiorPoint = (bits & 0x80) != 0 && (bits & 0x20) == 0;
+            boolean centerPoint = (bits & 0x1) == 0 && (bits & 0x20) == 0 && (bits & 0x40) == 0;
+            if (interiorPoint) {
+              segment = new CircularArcSegment(startIndex, value1, value2, false, false);
+            } else if (centerPoint) {
+              segment = new CircularArcSegment(startIndex, value1, value2, true, (bits & 0x8) != 0);
+            } else {
+              segment = null;
+            }
+            break;
           }
-        }
-        case 4 ->
-            segment =
-                new BezierSegment(
-                    startIndex, cursor.f64(), cursor.f64(), cursor.f64(), cursor.f64());
-        case 5 -> {
-          double centerX = cursor.f64();
-          double centerY = cursor.f64();
-          double rotation = cursor.f64();
-          double semiMajor = cursor.f64();
-          double ratio = cursor.f64();
-          long bits = cursor.u32();
-          if ((bits & 0x200) == 0 && (bits & 0x400) == 0) {
-            segment =
-                new EllipseSegment(
-                    startIndex,
-                    centerX,
-                    centerY,
-                    Math.toDegrees(rotation),
-                    semiMajor,
-                    ratio,
-                    (bits & 0x1000) != 0,
-                    (bits & 0x2000) != 0);
-          } else {
-            segment = null;
+        case 4:
+          segment =
+              new BezierSegment(
+                  startIndex, cursor.f64(), cursor.f64(), cursor.f64(), cursor.f64());
+          break;
+        case 5:
+          {
+            double centerX = cursor.f64();
+            double centerY = cursor.f64();
+            double rotation = cursor.f64();
+            double semiMajor = cursor.f64();
+            double ratio = cursor.f64();
+            long bits = cursor.u32();
+            if ((bits & 0x200) == 0 && (bits & 0x400) == 0) {
+              segment =
+                  new EllipseSegment(
+                      startIndex,
+                      centerX,
+                      centerY,
+                      Math.toDegrees(rotation),
+                      semiMajor,
+                      ratio,
+                      (bits & 0x1000) != 0,
+                      (bits & 0x2000) != 0);
+            } else {
+              segment = null;
+            }
+            break;
           }
-        }
-        default -> throw new IllegalArgumentException("Unsupported curve type: " + curveType);
+        default:
+          throw new IllegalArgumentException("Unsupported curve type: " + curveType);
       }
       if (segment == null) {
         continue;
@@ -375,28 +384,33 @@ public final class GeometryCodec {
 
   private static FileGdbSegment shift(FileGdbSegment segment, int offset) {
     int index = segment.startPointIndex() - offset;
-    return switch (segment) {
-      case CircularArcSegment arc ->
-          new CircularArcSegment(
-              index, arc.interiorX(), arc.interiorY(), arc.byCenter(), arc.counterClockwise());
-      case BezierSegment bezier ->
-          new BezierSegment(
-              index,
-              bezier.controlX1(),
-              bezier.controlY1(),
-              bezier.controlX2(),
-              bezier.controlY2());
-      case EllipseSegment ellipse ->
-          new EllipseSegment(
-              index,
-              ellipse.centerX(),
-              ellipse.centerY(),
-              ellipse.rotationDegrees(),
-              ellipse.semiMajor(),
-              ellipse.minorMajorRatio(),
-              ellipse.minor(),
-              ellipse.complete());
-    };
+    if (segment instanceof CircularArcSegment) {
+      CircularArcSegment arc = (CircularArcSegment) segment;
+      return new CircularArcSegment(
+          index, arc.interiorX(), arc.interiorY(), arc.byCenter(), arc.counterClockwise());
+    }
+    if (segment instanceof BezierSegment) {
+      BezierSegment bezier = (BezierSegment) segment;
+      return new BezierSegment(
+          index,
+          bezier.controlX1(),
+          bezier.controlY1(),
+          bezier.controlX2(),
+          bezier.controlY2());
+    }
+    if (segment instanceof EllipseSegment) {
+      EllipseSegment ellipse = (EllipseSegment) segment;
+      return new EllipseSegment(
+          index,
+          ellipse.centerX(),
+          ellipse.centerY(),
+          ellipse.rotationDegrees(),
+          ellipse.semiMajor(),
+          ellipse.minorMajorRatio(),
+          ellipse.minor(),
+          ellipse.complete());
+    }
+    throw new IncompatibleClassChangeError();
   }
 
   private static FileGdbPoint readDeltaPoint(
@@ -550,7 +564,8 @@ public final class GeometryCodec {
     boolean hasZ = definition.hasZ();
     boolean hasM = definition.hasM();
 
-    if (geometry instanceof FileGdbPoint point) {
+    if (geometry instanceof FileGdbPoint) {
+      FileGdbPoint point = (FileGdbPoint) geometry;
       int type;
       if (hasZ) {
         type = hasM ? SHPT_POINTZM : SHPT_POINTZ;
@@ -581,7 +596,8 @@ public final class GeometryCodec {
       return buffer.toByteArray();
     }
 
-    if (geometry instanceof FileGdbMultiPoint multiPoint) {
+    if (geometry instanceof FileGdbMultiPoint) {
+      FileGdbMultiPoint multiPoint = (FileGdbMultiPoint) geometry;
       int type;
       if (hasZ) {
         type = hasM ? SHPT_MULTIPOINTZM : SHPT_MULTIPOINTZ;
@@ -646,14 +662,14 @@ public final class GeometryCodec {
                       p ->
                           new FileGdbPoint(
                               precision.quantizeX(p.x()), precision.quantizeY(p.y()), p.z(), p.m()))
-                  .toList(),
+                  .collect(Collectors.toList()),
               part.segments()));
     Envelope bounds =
         GeometryBounds.of(
             polyline ? new FileGdbPolyline(storedParts) : new FileGdbPolygon(storedParts));
     writeEnvelope(
         buffer,
-        List.of(
+        Arrays.asList(
             new FileGdbPoint(bounds.xMin(), bounds.yMin()),
             new FileGdbPoint(bounds.xMax(), bounds.yMax())),
         precision);
@@ -666,7 +682,7 @@ public final class GeometryCodec {
       for (FileGdbSegment segment :
           part.segments().stream()
               .sorted(java.util.Comparator.comparingInt(FileGdbSegment::startPointIndex))
-              .toList()) {
+              .collect(Collectors.toList())) {
         CircularArcSegment arc = (CircularArcSegment) segment;
         buffer.varUInt32(offset + arc.startPointIndex());
         buffer.u8(1);

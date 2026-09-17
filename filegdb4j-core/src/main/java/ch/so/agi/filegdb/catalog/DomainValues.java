@@ -9,28 +9,38 @@ public final class DomainValues {
 
   public static Comparable<?> parse(FileGdbFieldType type, String value) {
     if (value == null) throw new IllegalArgumentException("Domain value is required");
-    return switch (type) {
-      case STRING -> value;
-      case INT16 -> Short.valueOf(value);
-      case INT32 -> Integer.valueOf(value);
-      case INT64 -> Long.valueOf(value);
-      case FLOAT32 -> {
-        float number = Float.parseFloat(value);
-        if (!Float.isFinite(number))
-          throw new IllegalArgumentException("Domain number outside field range: " + value);
-        yield number == 0 ? 0.0f : number;
-      }
-      case FLOAT64 -> {
-        double number = Double.parseDouble(value);
-        if (!Double.isFinite(number))
-          throw new IllegalArgumentException("Domain number outside field range: " + value);
-        yield number == 0 ? 0.0 : number;
-      }
-      case DATETIME -> LocalDateTime.parse(value.replace(' ', 'T'));
-      case DATE -> java.time.LocalDate.parse(value);
-      case TIME -> java.time.LocalTime.parse(value);
-      default -> throw new IllegalArgumentException("Unsupported domain field type: " + type);
-    };
+    switch (type) {
+      case STRING:
+        return value;
+      case INT16:
+        return Short.valueOf(value);
+      case INT32:
+        return Integer.valueOf(value);
+      case INT64:
+        return Long.valueOf(value);
+      case FLOAT32:
+        {
+          float number = Float.parseFloat(value);
+          if (!Float.isFinite(number))
+            throw new IllegalArgumentException("Domain number outside field range: " + value);
+          return number == 0 ? 0.0f : number;
+        }
+      case FLOAT64:
+        {
+          double number = Double.parseDouble(value);
+          if (!Double.isFinite(number))
+            throw new IllegalArgumentException("Domain number outside field range: " + value);
+          return number == 0 ? 0.0 : number;
+        }
+      case DATETIME:
+        return LocalDateTime.parse(value.replace(' ', 'T'));
+      case DATE:
+        return java.time.LocalDate.parse(value);
+      case TIME:
+        return java.time.LocalTime.parse(value);
+      default:
+        throw new IllegalArgumentException("Unsupported domain field type: " + type);
+    }
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -47,19 +57,22 @@ public final class DomainValues {
         || !java.util.Objects.equals(a.description(), b.description())
         || a.splitPolicy() != b.splitPolicy()
         || a.mergePolicy() != b.mergePolicy()) return false;
-    if (a instanceof RangeDomain x && b instanceof RangeDomain y)
+    if (a instanceof RangeDomain && b instanceof RangeDomain) {
+      RangeDomain x = (RangeDomain) a;
+      RangeDomain y = (RangeDomain) b;
       return parse(a.fieldType(), x.minValue()).equals(parse(b.fieldType(), y.minValue()))
           && parse(a.fieldType(), x.maxValue()).equals(parse(b.fieldType(), y.maxValue()));
-    var x = new java.util.HashMap<Comparable<?>, String>();
-    var y = new java.util.HashMap<Comparable<?>, String>();
-    for (var v : a.values()) x.put(parse(a.fieldType(), v.code()), v.name());
-    for (var v : b.values()) y.put(parse(b.fieldType(), v.code()), v.name());
+    }
+    java.util.HashMap<Comparable<?>, String> x = new java.util.HashMap<>();
+    java.util.HashMap<Comparable<?>, String> y = new java.util.HashMap<>();
+    for (CodedValue v : a.values()) x.put(parse(a.fieldType(), v.code()), v.name());
+    for (CodedValue v : b.values()) y.put(parse(b.fieldType(), v.code()), v.name());
     return x.equals(y);
   }
 
   public static void validate(Domain domain) {
     if (domain.fieldType() == null
-        || !java.util.Set.of(
+        || !java.util.Arrays.asList(
                 FileGdbFieldType.STRING,
                 FileGdbFieldType.INT16,
                 FileGdbFieldType.INT32,
@@ -71,16 +84,18 @@ public final class DomainValues {
                 FileGdbFieldType.TIME)
             .contains(domain.fieldType()))
       throw new IllegalArgumentException("Unsupported domain field type: " + domain.fieldType());
-    if (domain.name() == null || domain.name().isBlank())
+    if (domain.name() == null || domain.name().trim().isEmpty())
       throw new IllegalArgumentException("Domain name is required");
-    if (domain instanceof CodedValueDomain coded) {
-      var codes = new java.util.HashSet<Comparable<?>>();
-      for (var value : coded.values()) {
+    if (domain instanceof CodedValueDomain) {
+      CodedValueDomain coded = (CodedValueDomain) domain;
+      java.util.HashSet<Comparable<?>> codes = new java.util.HashSet<>();
+      for (CodedValue value : coded.values()) {
         if (!codes.add(parse(domain.fieldType(), value.code())))
           throw new IllegalArgumentException(
               "Duplicate domain code in " + domain.name() + ": " + value.code());
       }
-    } else if (domain instanceof RangeDomain range) {
+    } else if (domain instanceof RangeDomain) {
+      RangeDomain range = (RangeDomain) domain;
       if (domain.fieldType() == FileGdbFieldType.STRING)
         throw new IllegalArgumentException("Range domain requires numeric or date values");
       if (compare(
@@ -91,11 +106,13 @@ public final class DomainValues {
   }
 
   public static boolean contains(Domain domain, String literal) {
-    var value = parse(domain.fieldType(), literal);
-    if (domain instanceof CodedValueDomain coded)
+    Comparable<?> value = parse(domain.fieldType(), literal);
+    if (domain instanceof CodedValueDomain) {
+      CodedValueDomain coded = (CodedValueDomain) domain;
       return coded.values().stream()
           .anyMatch(v -> parse(domain.fieldType(), v.code()).equals(value));
-    var range = (RangeDomain) domain;
+    }
+    RangeDomain range = (RangeDomain) domain;
     return compare(value, parse(domain.fieldType(), range.minValue())) >= 0
         && compare(value, parse(domain.fieldType(), range.maxValue())) <= 0;
   }
