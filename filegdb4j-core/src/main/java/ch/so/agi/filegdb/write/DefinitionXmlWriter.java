@@ -79,9 +79,7 @@ final class DefinitionXmlWriter {
       element(xml, 3, "AliasName", field.alias());
     }
     element(xml, 3, "FieldType", esriType(field.type()));
-    if (field.nullable()) {
-      element(xml, 3, "IsNullable", "true");
-    }
+    element(xml, 3, "IsNullable", field.nullable() ? "true" : "false");
     if (field.required()) {
       element(xml, 3, "Required", "true");
     }
