@@ -26,6 +26,28 @@ public final class GdbTableWriter implements AutoCloseable {
     return table.writeRow(values, null);
   }
 
+  /**
+   * Replaces the values of an existing row in place.
+   *
+   * <p>The object id stays allocated and unchanged. The previous row blob is marked deleted, so
+   * readers never observe the old values.
+   *
+   * @param objectId one based object id
+   * @param values values aligned with the table definition fields
+   */
+  public void updateRow(long objectId, Object[] values) throws IOException {
+    table.replaceRow(objectId, values, null);
+  }
+
+  /**
+   * Marks a row as deleted.
+   *
+   * @param objectId one based object id; deleting an already deleted row is a no-op
+   */
+  public void deleteRow(long objectId) throws IOException {
+    table.deleteRow(objectId);
+  }
+
   @Override
   public void close() throws IOException {
     table.close();

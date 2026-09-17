@@ -48,6 +48,16 @@ public final class Ogr {
     if (Files.isExecutable(conda)) {
       return conda;
     }
+    Path miniconda =
+        Path.of(System.getProperty("user.home"), "miniconda3", "envs", "gdal", "bin", name);
+    if (Files.isExecutable(miniconda)) {
+      return miniconda;
+    }
+    Path anaconda =
+        Path.of(System.getProperty("user.home"), "anaconda3", "envs", "gdal", "bin", name);
+    if (Files.isExecutable(anaconda)) {
+      return anaconda;
+    }
     Path homebrew = Path.of("/opt/homebrew/bin", name);
     if (Files.isExecutable(homebrew)) {
       return homebrew;

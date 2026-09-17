@@ -194,40 +194,80 @@ public final class TableFileWriter implements AutoCloseable {
     return changed;
   }
 
-  /** Internal catalog replacement retaining the row identity and all other rows. */
+  /** Internal row replacement retaining the object id and all other rows. */
   void replaceRow(long objectId, Object[] values, FileGdbGeometry geometry) throws IOException {
     if (closed || objectId < 1 || objectId > totalRecordCount)
-      throw new IOException("Invalid catalog row");
+      throw new IOException("Invalid row: " + objectId);
     cancellation.run();
-    ByteBuffer previous = ByteBuffer.allocate(offsetWidth);
-    long position = indexPosition(objectId - 1);
-    while (previous.hasRemaining())
-      if (tableX.read(previous, position + previous.position()) < 0)
-        throw new IOException("Truncated row index");
-    long oldOffset = 0;
-    for (int i = 0; i < offsetWidth; i++) oldOffset |= (previous.array()[i] & 255L) << (8 * i);
-    if (oldOffset == 0) throw new IOException("Missing catalog row");
+    long oldOffset = readIndexOffset(objectId);
+    if (oldOffset == 0) throw new IOException("Missing row: " + objectId);
     byte[] encoded = encodeRow(values, geometry);
     if (fileSize + encoded.length + 4 >= (1L << (offsetWidth * 8)))
-      throw new IOException("Catalog exceeds offset width");
+      throw new IOException("Table exceeds offset width");
     BinaryBuffer row = new BinaryBuffer(encoded.length + 4);
     row.u32(encoded.length);
     row.bytes(encoded);
     writeFully(table, fileSize, row.toByteArray());
-    byte[] offset = new byte[offsetWidth];
-    for (int i = 0; i < offsetWidth; i++) offset[i] = (byte) (fileSize >>> (8 * i));
-    writeFully(tableX, position, offset);
-    ByteBuffer oldLength = ByteBuffer.allocate(4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
-    while (oldLength.hasRemaining())
-      if (table.read(oldLength, oldOffset + oldLength.position()) < 0)
-        throw new IOException("Truncated old catalog row");
-    BinaryBuffer deleted = new BinaryBuffer(4);
-    deleted.i32(-oldLength.getInt(0));
-    writeFully(table, oldOffset, deleted.toByteArray());
+    writeIndexOffset(objectId, fileSize);
+    int oldLength = readRowLength(oldOffset);
+    if (oldLength > 0) {
+      BinaryBuffer deleted = new BinaryBuffer(4);
+      deleted.i32(-oldLength);
+      writeFully(table, oldOffset, deleted.toByteArray());
+    }
     fileSize += row.size();
     headerBufferMaxSize = Math.max(headerBufferMaxSize, encoded.length);
     changed = true;
     updateHeaders();
+  }
+
+  /** Marks a row as deleted; its object id stays allocated. */
+  void deleteRow(long objectId) throws IOException {
+    if (closed || objectId < 1 || objectId > totalRecordCount)
+      throw new IOException("Invalid row: " + objectId);
+    cancellation.run();
+    long offset = readIndexOffset(objectId);
+    if (offset == 0) {
+      return;
+    }
+    int length = readRowLength(offset);
+    if (length <= 0) {
+      writeIndexOffset(objectId, 0L);
+      return;
+    }
+    BinaryBuffer deleted = new BinaryBuffer(4);
+    deleted.i32(-length);
+    writeFully(table, offset, deleted.toByteArray());
+    writeIndexOffset(objectId, 0L);
+    validRecordCount--;
+    changed = true;
+    updateHeaders();
+  }
+
+  private long readIndexOffset(long objectId) throws IOException {
+    long position = indexPosition(objectId - 1);
+    ByteBuffer previous = ByteBuffer.allocate(offsetWidth);
+    while (previous.hasRemaining())
+      if (tableX.read(previous, position + previous.position()) < 0)
+        throw new IOException("Truncated row index");
+    long offset = 0;
+    for (int i = 0; i < offsetWidth; i++) offset |= (previous.array()[i] & 255L) << (8 * i);
+    return offset;
+  }
+
+  private void writeIndexOffset(long objectId, long value) throws IOException {
+    long position = indexPosition(objectId - 1);
+    byte[] offset = new byte[offsetWidth];
+    for (int i = 0; i < offsetWidth; i++) offset[i] = (byte) (value >>> (8 * i));
+    writeFully(tableX, position, offset);
+  }
+
+  private int readRowLength(long offset) throws IOException {
+    ByteBuffer length = ByteBuffer.allocate(4).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+    while (length.hasRemaining())
+      if (table.read(length, offset + length.position()) < 0)
+        throw new IOException("Truncated row");
+    return length.getInt(0);
   }
 
   private long indexPosition(long row) {

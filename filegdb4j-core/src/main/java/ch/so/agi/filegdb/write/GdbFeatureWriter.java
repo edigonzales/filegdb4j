@@ -40,6 +40,30 @@ public final class GdbFeatureWriter implements AutoCloseable {
     return table.writeRow(attributes, null);
   }
 
+  /**
+   * Replaces the values of an existing feature in place.
+   *
+   * <p>The object id stays allocated and unchanged. The previous row blob is marked deleted, so
+   * readers never observe the old values.
+   *
+   * @param objectId one based object id
+   * @param attributes values aligned with the attribute fields of the definition
+   * @param geometry geometry value, may be null when the geometry field is nullable
+   */
+  public void updateRow(long objectId, Object[] attributes, FileGdbGeometry geometry)
+      throws IOException {
+    table.replaceRow(objectId, attributes, geometry);
+  }
+
+  /**
+   * Marks a feature as deleted.
+   *
+   * @param objectId one based object id; deleting an already deleted feature is a no-op
+   */
+  public void deleteRow(long objectId) throws IOException {
+    table.deleteRow(objectId);
+  }
+
   @Override
   public void close() throws IOException {
     table.close();
